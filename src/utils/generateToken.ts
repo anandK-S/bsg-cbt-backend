@@ -6,10 +6,11 @@ const generateToken = (res: Response, userId: string) => {
     expiresIn: '30d',
   });
 
+  const isProd = process.env.NODE_ENV === 'production';
   res.cookie('jwt', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production', // Use secure cookies only in production
-    sameSite: 'lax', // Prevent CSRF attacks but allow redirect auth
+    secure: isProd, // Must be true when sameSite is 'none'
+    sameSite: isProd ? 'none' : 'lax',
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
   });
 };

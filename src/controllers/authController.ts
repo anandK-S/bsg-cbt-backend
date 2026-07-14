@@ -16,8 +16,7 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
         res.status(403).json({ message: 'User is blocked' });
         return;
       }
-      
-      generateToken(res, user._id as string);
+      generateToken(res, user._id.toString());
 
       res.json({
         _id: user._id,
@@ -58,7 +57,7 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
     });
 
     if (user) {
-      generateToken(res, user._id as string);
+      generateToken(res, user._id.toString());
 
       res.status(201).json({
         _id: user._id,

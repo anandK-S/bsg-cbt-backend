@@ -142,7 +142,7 @@ ${fileContent.substring(0, 5000)} // Limiting to prevent token explosion for thi
     await exam.save();
 
     res.status(201).json({ message: 'Questions imported successfully', count: createdQuestions.length });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error importing questions:', error);
     res.status(500).json({ message: 'Error parsing questions with AI: ' + (error?.message || error) });
   }

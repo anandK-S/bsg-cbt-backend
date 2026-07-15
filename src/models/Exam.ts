@@ -5,6 +5,10 @@ export interface IExam extends Document {
   description: string;
   creatorId: mongoose.Types.ObjectId;
   durationMinutes: number;
+  durationUnit: 'sec' | 'min' | 'hour';
+  passingMarks: number;
+  scheduledStartDate?: Date;
+  scheduledEndDate?: Date;
   startTime?: Date;
   endTime?: Date;
   status: 'Draft' | 'Published' | 'Archived';
@@ -17,6 +21,10 @@ const examSchema: Schema = new Schema(
     description: { type: String },
     creatorId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     durationMinutes: { type: Number, required: true },
+    durationUnit: { type: String, enum: ['sec', 'min', 'hour'], default: 'min' },
+    passingMarks: { type: Number, default: 50 },
+    scheduledStartDate: { type: Date },
+    scheduledEndDate: { type: Date },
     startTime: { type: Date },
     endTime: { type: Date },
     status: { type: String, enum: ['Draft', 'Published', 'Archived'], default: 'Draft' },

@@ -16,7 +16,7 @@ router.route('/:id/status').put(protect, examiner, updateExamStatus);
 router.route('/:id/start').post(protect, startExam);
 
 // Question Routes
-router.route('/:examId/questions').post(protect, examiner, addQuestion);
+router.route('/:examId/questions').post(protect, examiner, upload.single('media'), addQuestion);
 router.route('/:examId/questions/import').post(protect, examiner, upload.single('file'), importQuestions);
 
 export default router;

@@ -42,12 +42,16 @@ export const getAvailableExams = async (req: AuthRequest, res: Response) => {
 // @route   POST /api/exams
 // @access  Private/Examiner/Admin
 export const createExam = async (req: AuthRequest, res: Response) => {
-  const { title, description, durationMinutes } = req.body;
+  const { title, description, durationMinutes, durationUnit, passingMarks, scheduledStartDate, scheduledEndDate } = req.body;
 
   const exam = new Exam({
     title,
     description,
     durationMinutes,
+    durationUnit: durationUnit || 'min',
+    passingMarks: passingMarks || 50,
+    scheduledStartDate,
+    scheduledEndDate,
     creatorId: req.user._id,
   });
 

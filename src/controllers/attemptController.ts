@@ -137,22 +137,27 @@ export const submitExam = async (req: AuthRequest, res: Response): Promise<void>
   attempt.endTime = new Date();
   await attempt.save();
 
-  let aiFeedback = "AI Feedback generation failed.";
+  let aiFeedback = "Good job on completing the exam! Review your correct and incorrect answers to improve your score next time.";
   
-  try {
-    const prompt = `The candidate just completed a multiple-choice exam. They scored ${score} out of ${totalMarks}.
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      const prompt = `The candidate just completed a multiple-choice exam. They scored ${score} out of ${totalMarks}.
 Analyze their performance and give a brief, encouraging qualitative summary pointing out areas of strength and areas to improve based on the category of questions they got right/wrong.
 Do not provide a generic response; write directly to the candidate as a supportive tutor. Keep it under 3 sentences.`;
 
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'mock_key' });
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-    });
-    
-    aiFeedback = response.text || aiFeedback;
-  } catch (error) {
-    console.error("AI feedback generation failed:", error);
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+      });
+      
+      if (response.text) {
+        aiFeedback = response.text;
+      }
+    } catch (error) {
+      console.error("AI feedback generation failed:", error);
+      // Fallback stays intact
+    }
   }
 
   const result = new Result({
@@ -273,7 +278,12 @@ export const getMyResults = async (req: AuthRequest, res: Response): Promise<voi
 // @access  Private (All Authenticated)
 export const getLeaderboard = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const results = await Result.find({}).populate('candidateId', 'name bsgId section');
+    const { examId } = req.query;
+    const filter: any = {};
+    if (examId && examId !== 'All') {
+      filter.examId = examId;
+    }
+    const results = await Result.find(filter).populate('candidateId', 'name bsgId section role');
 
     // Aggregate by candidate
     const candidateMap = new Map();
@@ -314,6 +324,32 @@ export const getLeaderboard = async (req: AuthRequest, res: Response): Promise<v
       });
 
     res.status(200).json(leaderboard);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// @desc    Delete an exam attempt and its result
+// @route   DELETE /api/attempts/:id
+// @access  Private/Admin
+export const deleteAttempt = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const attemptId = req.params.id;
+    
+    // Find the attempt
+    const attempt = await ExamAttempt.findById(attemptId);
+    if (!attempt) {
+      res.status(404).json({ message: 'Attempt not found' });
+      return;
+    }
+
+    // Delete the associated Result if it exists
+    await Result.deleteOne({ attemptId: attempt._id });
+    
+    // Delete the attempt
+    await attempt.deleteOne();
+
+    res.status(200).json({ message: 'Attempt and associated result deleted successfully' });
   } catch (error: any) {
     res.status(500).json({ message: error.message || 'Server error' });
   }

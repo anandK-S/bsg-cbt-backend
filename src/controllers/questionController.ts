@@ -9,12 +9,16 @@ import mammoth from 'mammoth';
 
 // We initialize inside the function so it doesn't crash on startup if the key is missing
 
+import fs from 'fs';
+import path from 'path';
+
 // @desc    Add a question to an exam
 // @route   POST /api/exams/:examId/questions
 // @access  Private/Examiner/Admin
 export const addQuestion = async (req: AuthRequest, res: Response): Promise<void> => {
   const { examId } = req.params;
-  const { text, options, correctOptionIndex, category, translations, marks, type, mediaUrl } = req.body;
+  let { text, options, correctOptionIndex, category, translations, marks, type, acceptableAnswers } = req.body;
+  let mediaUrl = req.body.mediaUrl;
 
   const exam = await Exam.findById(examId);
 
@@ -29,11 +33,29 @@ export const addQuestion = async (req: AuthRequest, res: Response): Promise<void
     return;
   }
 
+  // Handle local file upload
+  if (req.file) {
+    const uploadDir = path.join(__dirname, '../../public/uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    const ext = path.extname(req.file.originalname);
+    const filename = `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+    fs.writeFileSync(path.join(uploadDir, filename), req.file.buffer);
+    mediaUrl = `/uploads/${filename}`;
+  }
+
+  // Parse strings back to arrays/objects if they were sent as form-data strings
+  if (typeof options === 'string') options = JSON.parse(options);
+  if (typeof acceptableAnswers === 'string') acceptableAnswers = JSON.parse(acceptableAnswers);
+  if (typeof translations === 'string') translations = JSON.parse(translations);
+
   const question = new Question({
     examId,
     text,
-    options,
-    correctOptionIndex,
+    options: options || [],
+    correctOptionIndex: correctOptionIndex ? Number(correctOptionIndex) : undefined,
+    acceptableAnswers: acceptableAnswers || [],
     category,
     translations,
     type,

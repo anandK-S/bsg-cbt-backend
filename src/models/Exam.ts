@@ -3,6 +3,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface IExam extends Document {
   title: string;
   description: string;
+  category?: string;
   creatorId: mongoose.Types.ObjectId;
   durationMinutes: number;
   durationUnit: 'sec' | 'min' | 'hour';
@@ -19,6 +20,7 @@ const examSchema: Schema = new Schema(
   {
     title: { type: String, required: true },
     description: { type: String },
+    category: { type: String },
     creatorId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     durationMinutes: { type: Number, required: true },
     durationUnit: { type: String, enum: ['sec', 'min', 'hour'], default: 'min' },

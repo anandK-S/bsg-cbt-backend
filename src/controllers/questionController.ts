@@ -130,7 +130,40 @@ Text to parse:
 ${fileContent.substring(0, 5000)} // Limiting to prevent token explosion for this example
     `;
 
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || 'mock_key' });
+    if (!process.env.GEMINI_API_KEY) {
+      // Return a mock parsed question instead of throwing an error
+      const mockQuestions = [
+        {
+          text: "Sample AI Extracted Question from Document?",
+          options: ["Option A", "Option B", "Option C", "Option D"],
+          correctOptionIndex: 0,
+          category: "AI Generated"
+        }
+      ];
+      
+      const createdQuestions = [];
+      for (const q of mockQuestions) {
+        const question = new Question({
+          examId,
+          text: q.text,
+          options: q.options,
+          correctOptionIndex: q.correctOptionIndex,
+          category: q.category,
+        });
+        const savedQ = await question.save();
+        createdQuestions.push(savedQ);
+        
+        exam.questions.push({
+          questionId: savedQ._id as any,
+          marks: 1,
+        });
+      }
+      await exam.save();
+      res.status(201).json({ message: 'Questions imported successfully (Mock data used since API key is missing)', count: createdQuestions.length });
+      return;
+    }
+
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
@@ -170,4 +203,94 @@ ${fileContent.substring(0, 5000)} // Limiting to prevent token explosion for thi
     console.error('Error importing questions:', error);
     res.status(500).json({ message: 'Error parsing questions with AI: ' + (error?.message || error) });
   }
+};
+
+// @desc    Edit a question
+// @route   PUT /api/exams/:examId/questions/:questionId
+// @access  Private/Examiner/Admin
+export const editQuestion = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { examId, questionId } = req.params;
+  let { text, options, correctOptionIndex, category, translations, type, acceptableAnswers } = req.body;
+  let mediaUrl = req.body.mediaUrl;
+
+  const exam = await Exam.findById(examId);
+
+  if (!exam) {
+    res.status(404).json({ message: 'Exam not found' });
+    return;
+  }
+
+  // Authorization check
+  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
+    res.status(403).json({ message: 'Not authorized' });
+    return;
+  }
+
+  const question = await Question.findById(questionId);
+  if (!question) {
+    res.status(404).json({ message: 'Question not found' });
+    return;
+  }
+
+  // Handle local file upload for updating media
+  if (req.file) {
+    const uploadDir = path.join(__dirname, '../../public/uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    const ext = path.extname(req.file.originalname);
+    const filename = `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+    fs.writeFileSync(path.join(uploadDir, filename), req.file.buffer);
+    mediaUrl = `/uploads/${filename}`;
+  }
+
+  if (typeof options === 'string') options = JSON.parse(options);
+  if (typeof acceptableAnswers === 'string') acceptableAnswers = JSON.parse(acceptableAnswers);
+  if (typeof translations === 'string') translations = JSON.parse(translations);
+
+  question.text = text || question.text;
+  question.options = options || question.options;
+  if (correctOptionIndex !== undefined) question.correctOptionIndex = Number(correctOptionIndex);
+  question.acceptableAnswers = acceptableAnswers || question.acceptableAnswers;
+  question.category = category || question.category;
+  question.translations = translations || question.translations;
+  question.type = type || question.type;
+  if (mediaUrl !== undefined) question.mediaUrl = mediaUrl;
+
+  const updatedQuestion = await question.save();
+  res.status(200).json(updatedQuestion);
+};
+
+// @desc    Delete a question
+// @route   DELETE /api/exams/:examId/questions/:questionId
+// @access  Private/Examiner/Admin
+export const deleteQuestion = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { examId, questionId } = req.params;
+
+  const exam = await Exam.findById(examId);
+
+  if (!exam) {
+    res.status(404).json({ message: 'Exam not found' });
+    return;
+  }
+
+  // Authorization check
+  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
+    res.status(403).json({ message: 'Not authorized' });
+    return;
+  }
+
+  const question = await Question.findById(questionId);
+  if (!question) {
+    res.status(404).json({ message: 'Question not found' });
+    return;
+  }
+
+  // Remove from exam questions array
+  exam.questions = exam.questions.filter((q: any) => q.questionId.toString() !== questionId);
+  await exam.save();
+
+  await Question.findByIdAndDelete(questionId);
+
+  res.status(200).json({ message: 'Question removed successfully' });
 };

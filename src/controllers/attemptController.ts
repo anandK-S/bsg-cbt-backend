@@ -19,6 +19,17 @@ export const startExam = async (req: AuthRequest, res: Response): Promise<void> 
     return;
   }
 
+  // Check scheduled dates
+  const now = new Date();
+  if (exam.scheduledStartDate && new Date(exam.scheduledStartDate) > now) {
+    res.status(403).json({ message: 'Exam has not started yet', availableFrom: exam.scheduledStartDate });
+    return;
+  }
+  if (exam.scheduledEndDate && new Date(exam.scheduledEndDate) < now) {
+    res.status(403).json({ message: 'Exam has already ended' });
+    return;
+  }
+
   // Check if attempt already exists and is in-progress
   let attempt = await ExamAttempt.findOne({ candidateId: req.user._id, examId: id, status: 'In-Progress' });
 
@@ -350,6 +361,22 @@ export const deleteAttempt = async (req: AuthRequest, res: Response): Promise<vo
     await attempt.deleteOne();
 
     res.status(200).json({ message: 'Attempt and associated result deleted successfully' });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};
+
+// @desc    Get live attempts for monitoring
+// @route   GET /api/attempts/live
+// @access  Private/Examiner/Admin
+export const getLiveAttempts = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const liveAttempts = await ExamAttempt.find({ status: 'In-Progress' })
+      .populate('candidateId', 'name bsgId section')
+      .populate('examId', 'title')
+      .sort({ updatedAt: -1 });
+
+    res.status(200).json(liveAttempts);
   } catch (error: any) {
     res.status(500).json({ message: error.message || 'Server error' });
   }

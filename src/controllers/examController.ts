@@ -99,6 +99,37 @@ export const updateExamStatus = async (req: AuthRequest, res: Response): Promise
 
   exam.status = status;
   await exam.save();
+  res.json({ message: 'Status updated', exam });
+};
 
-  res.status(200).json(exam);
+// @desc    Update exam details
+// @route   PUT /api/exams/:id
+// @access  Private/Examiner/Admin
+export const updateExam = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { title, description, durationMinutes, category, scheduledStartDate, scheduledEndDate } = req.body;
+
+  const exam = await Exam.findById(id);
+
+  if (!exam) {
+    res.status(404).json({ message: 'Exam not found' });
+    return;
+  }
+
+  // Authorization check
+  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
+    res.status(403).json({ message: 'Not authorized to update this exam' });
+    return;
+  }
+
+  exam.title = title || exam.title;
+  exam.description = description !== undefined ? description : exam.description;
+  exam.durationMinutes = durationMinutes || exam.durationMinutes;
+  exam.category = category !== undefined ? category : exam.category;
+  
+  if (scheduledStartDate !== undefined) exam.scheduledStartDate = scheduledStartDate || null;
+  if (scheduledEndDate !== undefined) exam.scheduledEndDate = scheduledEndDate || null;
+
+  await exam.save();
+  res.json({ message: 'Exam updated', exam });
 };

@@ -1,6 +1,6 @@
 import express from 'express';
 import { startExam } from '../controllers/attemptController';
-import { heartbeatSync, submitExam, getResult, getDetailedResult, getMyResults, getLeaderboard, deleteAttempt } from '../controllers/attemptController';
+import { heartbeatSync, submitExam, getResult, getDetailedResult, getMyResults, getLeaderboard, deleteAttempt, getLiveAttempts } from '../controllers/attemptController';
 import { protect, admin } from '../middleware/authMiddleware';
 
 const examRoutes = express.Router();
@@ -8,6 +8,7 @@ examRoutes.post('/:id/start', protect, startExam);
 
 const attemptRoutes = express.Router();
 attemptRoutes.get('/leaderboard', protect, getLeaderboard);
+attemptRoutes.get('/live', protect, getLiveAttempts);
 attemptRoutes.post('/:id/heartbeat', protect, heartbeatSync);
 attemptRoutes.post('/:id/submit', protect, submitExam);
 attemptRoutes.delete('/:id', protect, admin, deleteAttempt);

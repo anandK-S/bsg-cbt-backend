@@ -49,7 +49,7 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    let assignedRole = 'Candidate';
+    let assignedRole: 'Candidate' | 'Examiner' | 'Admin' = 'Candidate';
     if (adminCode && process.env.ADMIN_REGISTRATION_CODE && adminCode === process.env.ADMIN_REGISTRATION_CODE) {
       assignedRole = 'Admin';
     }

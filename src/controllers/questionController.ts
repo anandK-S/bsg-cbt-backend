@@ -103,32 +103,44 @@ export const importQuestions = async (req: AuthRequest, res: Response): Promise<
     const mimeType = file.mimetype;
     const originalName = file.originalname.toLowerCase();
 
-    if (mimeType === 'application/pdf' || originalName.endsWith('.pdf')) {
-      const pdfData = await pdfParse(file.buffer);
-      fileContent = pdfData.text;
-    } else if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || originalName.endsWith('.docx')) {
-      const docxData = await mammoth.extractRawText({ buffer: file.buffer });
-      fileContent = docxData.value;
-    } else {
-      // Fallback to text
-      fileContent = file.buffer.toString('utf-8');
-    }
-    
-    if (!fileContent || fileContent.trim() === '') {
-      res.status(400).json({ message: 'Could not extract text from the file.' });
-      return;
-    }
-
-    const prompt = `Extract the multiple choice questions from the following text and format them as a JSON array of objects.
+    let contentsPayload: any = [];
+    const basePrompt = `Extract the multiple choice questions from the following text/image and format them as a JSON array of objects.
 Each object must have the following keys:
 - "text": The question text
 - "options": An array of 4 string options
 - "correctOptionIndex": The 0-based index of the correct option
 - "category": A guessed category based on the question (e.g. "First Aid", "Knots")
+`;
 
-Text to parse:
-${fileContent.substring(0, 5000)} // Limiting to prevent token explosion for this example
-    `;
+    if (mimeType.startsWith('image/')) {
+      contentsPayload = [
+        basePrompt,
+        {
+          inlineData: {
+            data: file.buffer.toString('base64'),
+            mimeType: mimeType
+          }
+        }
+      ];
+    } else {
+      if (mimeType === 'application/pdf' || originalName.endsWith('.pdf')) {
+        const pdfData = await pdfParse(file.buffer);
+        fileContent = pdfData.text;
+      } else if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || originalName.endsWith('.docx')) {
+        const docxData = await mammoth.extractRawText({ buffer: file.buffer });
+        fileContent = docxData.value;
+      } else {
+        // Fallback to text
+        fileContent = file.buffer.toString('utf-8');
+      }
+      
+      if (!fileContent || fileContent.trim() === '') {
+        res.status(400).json({ message: 'Could not extract text from the file.' });
+        return;
+      }
+
+      contentsPayload = `${basePrompt}\n\nText to parse:\n${fileContent.substring(0, 5000)}`;
+    }
 
     if (!process.env.GEMINI_API_KEY) {
       // Return a mock parsed question instead of throwing an error
@@ -166,7 +178,7 @@ ${fileContent.substring(0, 5000)} // Limiting to prevent token explosion for thi
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: prompt,
+      contents: contentsPayload,
     });
 
     const aiText = response.text;
@@ -175,7 +187,19 @@ ${fileContent.substring(0, 5000)} // Limiting to prevent token explosion for thi
     const jsonMatch = aiText?.match(/```(?:json)?([\s\S]*?)```/) || [null, aiText];
     const jsonString = jsonMatch[1]?.trim() || '[]';
     
-    const parsedQuestions = JSON.parse(jsonString);
+    let parsedQuestions = [];
+    try {
+      parsedQuestions = JSON.parse(jsonString);
+    } catch (parseError) {
+      console.error('Error parsing JSON from AI response:', aiText);
+      res.status(500).json({ message: 'AI returned invalid formatting. Please try again.' });
+      return;
+    }
+
+    if (!Array.isArray(parsedQuestions)) {
+      res.status(500).json({ message: 'AI did not return a list of questions.' });
+      return;
+    }
 
     const createdQuestions = [];
 

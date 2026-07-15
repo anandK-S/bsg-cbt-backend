@@ -136,3 +136,26 @@ export const updateExam = async (req: AuthRequest, res: Response): Promise<void>
   await exam.save();
   res.json({ message: 'Exam updated', exam });
 };
+
+// @desc    Delete exam
+// @route   DELETE /api/exams/:id
+// @access  Private/Examiner/Admin
+export const deleteExam = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+
+  const exam = await Exam.findById(id);
+
+  if (!exam) {
+    res.status(404).json({ message: 'Exam not found' });
+    return;
+  }
+
+  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
+    res.status(403).json({ message: 'Not authorized to delete this exam' });
+    return;
+  }
+
+  await Exam.findByIdAndDelete(id);
+  // Note: For a complete system, also delete associated Questions, Attempts, and Results
+  res.json({ message: 'Exam removed successfully' });
+};

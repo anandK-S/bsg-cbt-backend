@@ -394,3 +394,52 @@ export const getLiveAttempts = async (req: AuthRequest, res: Response): Promise<
     res.status(500).json({ message: error.message || 'Server error' });
   }
 };
+
+// @desc    Clear all results for an exam
+// @route   DELETE /api/attempts/:examId/results
+// @access  Private/Examiner/Admin
+export const clearExamResults = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { examId } = req.params;
+  
+  const exam = await Exam.findById(examId);
+  if (!exam) {
+    res.status(404).json({ message: 'Exam not found' });
+    return;
+  }
+  
+  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
+    res.status(403).json({ message: 'Not authorized' });
+    return;
+  }
+  
+  // Delete all results and exam attempts for this exam
+  await Result.deleteMany({ examId });
+  await ExamAttempt.deleteMany({ examId });
+  
+  res.status(200).json({ message: 'All results cleared successfully' });
+};
+
+// @desc    Delete a specific exam result
+// @route   DELETE /api/attempts/result/:resultId
+// @access  Private/Examiner/Admin
+export const deleteExamResult = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { resultId } = req.params;
+  
+  const result = await Result.findById(resultId).populate('examId');
+  if (!result) {
+    res.status(404).json({ message: 'Result not found' });
+    return;
+  }
+  
+  const exam = result.examId as any;
+  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
+    res.status(403).json({ message: 'Not authorized' });
+    return;
+  }
+  
+  await Result.findByIdAndDelete(resultId);
+  // Also delete corresponding ExamAttempt to fully clear it
+  await ExamAttempt.findOneAndDelete({ candidateId: result.candidateId, examId: result.examId });
+  
+  res.status(200).json({ message: 'Result deleted successfully' });
+};

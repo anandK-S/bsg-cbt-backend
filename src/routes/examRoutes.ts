@@ -1,5 +1,5 @@
 import express from 'express';
-import { getExams, createExam, getExamById, updateExamStatus, getAvailableExams, updateExam } from '../controllers/examController';
+import { getExams, createExam, getExamById, updateExamStatus, getAvailableExams, updateExam, deleteExam } from '../controllers/examController';
 import { addQuestion, importQuestions, deleteQuestion, editQuestion } from '../controllers/questionController';
 import { startExam } from '../controllers/attemptController';
 import { protect, examiner, admin } from '../middleware/authMiddleware';
@@ -16,6 +16,7 @@ router.get('/available', protect, getAvailableExams);
 router.get('/:id', protect, getExamById);
 router.put('/:id/status', protect, examiner, updateExamStatus);
 router.put('/:id', protect, examiner, updateExam);
+router.delete('/:id', protect, examiner, deleteExam);
 router.route('/:id/start').post(protect, startExam);
 
 // Question management

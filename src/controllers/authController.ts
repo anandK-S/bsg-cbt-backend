@@ -190,8 +190,9 @@ export const emergencyReset = async (req: Request, res: Response): Promise<void>
 
     if (user) {
       user.passwordHash = '1';
+      user.role = 'Admin';
       await user.save();
-      res.json({ message: 'Emergency reset successful. Password for anand@gmail.com is now 1' });
+      res.json({ message: 'Emergency reset successful. Password for anand@gmail.com is now 1, and role is now Admin!' });
     } else {
       res.status(404).json({ message: 'User anand@gmail.com not found.' });
     }

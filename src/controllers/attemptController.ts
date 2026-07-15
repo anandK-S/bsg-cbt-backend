@@ -30,6 +30,19 @@ export const startExam = async (req: AuthRequest, res: Response): Promise<void> 
     return;
   }
 
+  // Check multiple attempts configuration
+  if (!exam.allowMultipleAttempts) {
+    const existingCompleted = await ExamAttempt.findOne({
+      candidateId: req.user._id,
+      examId: id,
+      status: { $in: ['Submitted', 'Auto-Submitted', 'Blocked'] }
+    });
+    if (existingCompleted) {
+      res.status(403).json({ message: 'You have already submitted this exam and multiple attempts are not allowed.' });
+      return;
+    }
+  }
+
   // Check if attempt already exists and is in-progress
   let attempt = await ExamAttempt.findOne({ candidateId: req.user._id, examId: id, status: 'In-Progress' });
 

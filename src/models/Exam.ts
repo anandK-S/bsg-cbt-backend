@@ -13,6 +13,7 @@ export interface IExam extends Document {
   startTime?: Date;
   endTime?: Date;
   status: 'Draft' | 'Published' | 'Archived';
+  allowMultipleAttempts: boolean;
   questions: { questionId: mongoose.Types.ObjectId; marks: number }[];
 }
 
@@ -30,6 +31,7 @@ const examSchema: Schema = new Schema(
     startTime: { type: Date },
     endTime: { type: Date },
     status: { type: String, enum: ['Draft', 'Published', 'Archived'], default: 'Draft' },
+    allowMultipleAttempts: { type: Boolean, default: false },
     questions: [
       {
         questionId: { type: Schema.Types.ObjectId, ref: 'Question' },

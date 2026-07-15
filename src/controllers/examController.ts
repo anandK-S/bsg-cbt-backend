@@ -42,7 +42,7 @@ export const getAvailableExams = async (req: AuthRequest, res: Response) => {
 // @route   POST /api/exams
 // @access  Private/Examiner/Admin
 export const createExam = async (req: AuthRequest, res: Response) => {
-  const { title, description, durationMinutes, durationUnit, passingMarks, scheduledStartDate, scheduledEndDate } = req.body;
+  const { title, description, category, durationMinutes, durationUnit, passingMarks, scheduledStartDate, scheduledEndDate, allowMultipleAttempts } = req.body;
 
   const exam = new Exam({
     title,
@@ -52,6 +52,7 @@ export const createExam = async (req: AuthRequest, res: Response) => {
     passingMarks: passingMarks || 50,
     scheduledStartDate,
     scheduledEndDate,
+    allowMultipleAttempts,
     creatorId: req.user._id,
   });
 
@@ -107,7 +108,7 @@ export const updateExamStatus = async (req: AuthRequest, res: Response): Promise
 // @access  Private/Examiner/Admin
 export const updateExam = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { title, description, durationMinutes, category, scheduledStartDate, scheduledEndDate } = req.body;
+  const { title, description, category, durationMinutes, durationUnit, passingMarks, scheduledStartDate, scheduledEndDate, allowMultipleAttempts } = req.body;
 
   const exam = await Exam.findById(id);
 
@@ -122,13 +123,15 @@ export const updateExam = async (req: AuthRequest, res: Response): Promise<void>
     return;
   }
 
-  exam.title = title || exam.title;
-  exam.description = description !== undefined ? description : exam.description;
-  exam.durationMinutes = durationMinutes || exam.durationMinutes;
-  exam.category = category !== undefined ? category : exam.category;
-  
+  if (title) exam.title = title;
+  if (description !== undefined) exam.description = description;
+  if (category !== undefined) exam.category = category;
+  if (durationMinutes !== undefined) exam.durationMinutes = durationMinutes;
+  if (durationUnit) exam.durationUnit = durationUnit;
+  if (passingMarks !== undefined) exam.passingMarks = passingMarks;
   if (scheduledStartDate !== undefined) exam.scheduledStartDate = scheduledStartDate || null;
   if (scheduledEndDate !== undefined) exam.scheduledEndDate = scheduledEndDate || null;
+  if (allowMultipleAttempts !== undefined) exam.allowMultipleAttempts = allowMultipleAttempts;
 
   await exam.save();
   res.json({ message: 'Exam updated', exam });

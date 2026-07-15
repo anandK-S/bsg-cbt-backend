@@ -6,10 +6,14 @@ export interface AuthRequest extends Request {
   user?: any;
 }
 
-const protect = async (req: AuthRequest, res: Response, next: NextFunction) => {
+const protect = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   let token;
 
-  token = req.cookies.jwt;
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    token = req.headers.authorization.split(' ')[1];
+  } else if (req.cookies.jwt) {
+    token = req.cookies.jwt;
+  }
 
   if (token) {
     try {

@@ -16,7 +16,7 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
         res.status(403).json({ message: 'User is blocked' });
         return;
       }
-      generateToken(res, user._id.toString());
+      const token = generateToken(res, user._id.toString());
 
       res.json({
         _id: user._id,
@@ -25,6 +25,7 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
         role: user.role,
         bsgId: user.bsgId,
         profileImage: user.profileImage,
+        token,
       });
     } else {
       res.status(401).json({ message: 'Invalid email or password' });
@@ -57,7 +58,7 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
     });
 
     if (user) {
-      generateToken(res, user._id.toString());
+      const token = generateToken(res, user._id.toString());
 
       res.status(201).json({
         _id: user._id,
@@ -66,6 +67,7 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
         role: user.role,
         bsgId: user.bsgId,
         profileImage: user.profileImage,
+        token,
       });
     } else {
       res.status(400).json({ message: 'Invalid user data' });

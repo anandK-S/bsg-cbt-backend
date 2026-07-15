@@ -7,6 +7,7 @@ export interface IUser extends Document {
   passwordHash: string;
   role: 'Candidate' | 'Examiner' | 'Admin';
   bsgId?: string; // Optional for non-candidates
+  section?: 'Scout' | 'Guide' | 'Rover' | 'Ranger' | 'Leader';
   profileImage?: string; // URL for profile picture
   status: 'Active' | 'Blocked';
   matchPassword(enteredPassword: string): Promise<boolean>;
@@ -19,6 +20,7 @@ const userSchema: Schema = new Schema(
     passwordHash: { type: String, required: true },
     role: { type: String, enum: ['Candidate', 'Examiner', 'Admin'], default: 'Candidate' },
     bsgId: { type: String }, // e.g., Scout/Guide ID
+    section: { type: String, enum: ['Scout', 'Guide', 'Rover', 'Ranger', 'Leader'] },
     profileImage: { type: String },
     status: { type: String, enum: ['Active', 'Blocked'], default: 'Active' },
   },

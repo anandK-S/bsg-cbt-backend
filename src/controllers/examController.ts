@@ -8,10 +8,10 @@ import { AuthRequest } from '../middleware/authMiddleware';
 export const getExams = async (req: AuthRequest, res: Response) => {
   let exams;
   if (req.user.role === 'Admin') {
-    exams = await Exam.find({});
+    exams = await Exam.find({}).populate('creatorId', 'name email');
   } else {
     // Examiner sees only their exams
-    exams = await Exam.find({ creatorId: req.user._id });
+    exams = await Exam.find({ creatorId: req.user._id }).populate('creatorId', 'name email');
   }
   res.json(exams);
 };

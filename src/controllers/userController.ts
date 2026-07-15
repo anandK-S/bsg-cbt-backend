@@ -107,3 +107,26 @@ export const deleteUser = async (req: AuthRequest, res: Response): Promise<void>
     res.status(500).json({ message: error.message || 'Server error' });
   }
 };
+
+// @desc    Get insights for a specific examiner
+// @route   GET /api/users/examiner/:id/insights
+// @access  Private/Admin
+export const getExaminerInsights = async (req: any, res: Response): Promise<void> => {
+  try {
+    const examinerId = req.params.id;
+    const Exam = require('../models/Exam').default;
+    const ExamAttempt = require('../models/ExamAttempt').default;
+
+    const exams = await Exam.find({ creatorId: examinerId }).populate('questions.questionId');
+    const examIds = exams.map((e: any) => e._id);
+    
+    const attempts = await ExamAttempt.find({ 
+      examId: { $in: examIds }, 
+      status: 'Completed' 
+    }).populate('candidateId', 'name email section');
+
+    res.json({ exams, attempts });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};

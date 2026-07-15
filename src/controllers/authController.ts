@@ -179,3 +179,23 @@ export const updateUserProfile = async (req: any, res: Response): Promise<void> 
     res.status(404).json({ message: 'User not found' });
   }
 };
+
+// @desc    TEMPORARY: Emergency password reset for admin
+// @route   GET /api/auth/emergency-reset
+// @access  Public
+export const emergencyReset = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const email = 'anand@gmail.com';
+    const user = await User.findOne({ email });
+
+    if (user) {
+      user.passwordHash = '1';
+      await user.save();
+      res.json({ message: 'Emergency reset successful. Password for anand@gmail.com is now 1' });
+    } else {
+      res.status(404).json({ message: 'User anand@gmail.com not found.' });
+    }
+  } catch (error: any) {
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};

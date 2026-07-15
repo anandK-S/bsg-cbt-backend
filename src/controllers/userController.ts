@@ -130,3 +130,75 @@ export const getExaminerInsights = async (req: any, res: Response): Promise<void
     res.status(500).json({ message: error.message || 'Server error' });
   }
 };
+
+// @desc    Bulk import users via CSV
+// @route   POST /api/users/bulk-import
+// @access  Private/Admin
+export const bulkImportUsers = async (req: any, res: Response): Promise<void> => {
+  try {
+    const file = req.file;
+    if (!file) {
+      res.status(400).json({ message: 'No CSV file uploaded' });
+      return;
+    }
+
+    const csvData = file.buffer.toString('utf-8');
+    const lines = csvData.split(/\r?\n/).filter((line: string) => line.trim() !== '');
+
+    if (lines.length < 2) {
+      res.status(400).json({ message: 'CSV file is empty or missing data rows' });
+      return;
+    }
+
+    // Assume header: name, email, password, role, bsgId, section, state
+    const headers = lines[0].split(',').map((h: string) => h.trim().toLowerCase());
+    
+    let createdCount = 0;
+    const errors = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].split(',').map((v: string) => v.trim());
+      if (line.length < 5) continue; // Minimum required fields
+
+      const userData: any = {};
+      headers.forEach((header: string, index: number) => {
+        userData[header] = line[index] || '';
+      });
+
+      try {
+        const existingUser = await User.findOne({ 
+          $or: [{ email: userData.email }, { bsgId: userData.bsgid }] 
+        });
+
+        if (existingUser) {
+          errors.push(`Row ${i + 1}: User with email ${userData.email} or BSG ID ${userData.bsgid} already exists`);
+          continue;
+        }
+
+        const newUser = new User({
+          name: userData.name,
+          email: userData.email,
+          passwordHash: userData.password,
+          role: userData.role || 'Candidate',
+          bsgId: userData.bsgid,
+          section: userData.section,
+          state: userData.state,
+          status: 'Active'
+        });
+
+        await newUser.save();
+        createdCount++;
+      } catch (err: any) {
+        errors.push(`Row ${i + 1}: Failed to create user - ${err.message}`);
+      }
+    }
+
+    res.status(200).json({
+      message: 'Bulk import complete',
+      createdCount,
+      errors
+    });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};

@@ -5,6 +5,9 @@ export interface IQuestion extends Document {
   text: string;
   options: string[];
   correctOptionIndex: number;
+  type?: 'SingleChoice' | 'MultipleChoice' | 'Subjective';
+  marks?: number;
+  mediaUrl?: string;
   translations?: {
     hi?: {
       text: string;
@@ -20,6 +23,9 @@ const questionSchema: Schema = new Schema(
     text: { type: String, required: true },
     options: [{ type: String, required: true }],
     correctOptionIndex: { type: Number, required: true },
+    type: { type: String, enum: ['SingleChoice', 'MultipleChoice', 'Subjective'], default: 'SingleChoice' },
+    marks: { type: Number, default: 1 },
+    mediaUrl: { type: String },
     translations: {
       hi: {
         text: { type: String },

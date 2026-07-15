@@ -1,12 +1,13 @@
 import express from 'express';
 import { startExam } from '../controllers/attemptController';
-import { heartbeatSync, submitExam, getResult, getDetailedResult, getMyResults } from '../controllers/attemptController';
+import { heartbeatSync, submitExam, getResult, getDetailedResult, getMyResults, getLeaderboard } from '../controllers/attemptController';
 import { protect } from '../middleware/authMiddleware';
 
 const examRoutes = express.Router();
 examRoutes.post('/:id/start', protect, startExam);
 
 const attemptRoutes = express.Router();
+attemptRoutes.get('/leaderboard', protect, getLeaderboard);
 attemptRoutes.post('/:id/heartbeat', protect, heartbeatSync);
 attemptRoutes.post('/:id/submit', protect, submitExam);
 attemptRoutes.get('/results/me', protect, getMyResults);

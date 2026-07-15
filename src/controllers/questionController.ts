@@ -14,7 +14,7 @@ import mammoth from 'mammoth';
 // @access  Private/Examiner/Admin
 export const addQuestion = async (req: AuthRequest, res: Response): Promise<void> => {
   const { examId } = req.params;
-  const { text, options, correctOptionIndex, category, translations, marks } = req.body;
+  const { text, options, correctOptionIndex, category, translations, marks, type, mediaUrl } = req.body;
 
   const exam = await Exam.findById(examId);
 
@@ -36,6 +36,8 @@ export const addQuestion = async (req: AuthRequest, res: Response): Promise<void
     correctOptionIndex,
     category,
     translations,
+    type,
+    mediaUrl,
   });
 
   const createdQuestion = await question.save();

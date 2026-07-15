@@ -29,7 +29,7 @@ export const startExam = async (req: AuthRequest, res: Response): Promise<void> 
       timeRemaining: exam.durationMinutes * 60,
       answers: exam.questions.map((q: any) => ({
         questionId: q.questionId._id,
-        status: 'Unanswered',
+        status: 'NotVisited',
       })),
     });
     await attempt.save();
@@ -266,4 +266,55 @@ export const getMyResults = async (req: AuthRequest, res: Response): Promise<voi
     .sort({ createdAt: -1 });
 
   res.status(200).json(results);
+};
+
+// @desc    Get Global Leaderboard
+// @route   GET /api/attempts/leaderboard
+// @access  Private (All Authenticated)
+export const getLeaderboard = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const results = await Result.find({}).populate('candidateId', 'name bsgId section');
+
+    // Aggregate by candidate
+    const candidateMap = new Map();
+
+    results.forEach((r: any) => {
+      if (!r.candidateId || r.candidateId.role === 'Admin' || r.candidateId.role === 'Examiner') return; // Only candidates
+      
+      const cid = r.candidateId._id.toString();
+      if (!candidateMap.has(cid)) {
+        candidateMap.set(cid, {
+          _id: cid,
+          name: r.candidateId.name,
+          bsgId: r.candidateId.bsgId,
+          section: r.candidateId.section,
+          totalScore: 0,
+          totalMarksPossible: 0,
+          examsTaken: 0,
+        });
+      }
+
+      const stats = candidateMap.get(cid);
+      stats.totalScore += r.score;
+      stats.totalMarksPossible += r.totalMarks;
+      stats.examsTaken += 1;
+    });
+
+    const leaderboard = Array.from(candidateMap.values())
+      .map(c => ({
+        ...c,
+        percentage: c.totalMarksPossible > 0 ? ((c.totalScore / c.totalMarksPossible) * 100).toFixed(1) : 0
+      }))
+      .sort((a, b) => {
+        // Sort by total score, then by percentage
+        if (b.totalScore !== a.totalScore) {
+          return b.totalScore - a.totalScore;
+        }
+        return Number(b.percentage) - Number(a.percentage);
+      });
+
+    res.status(200).json(leaderboard);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
 };

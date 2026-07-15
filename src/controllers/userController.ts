@@ -66,3 +66,44 @@ export const changeUserPassword = async (req: Request, res: Response): Promise<v
     res.status(500).json({ message: error.message || 'Server error' });
   }
 };
+
+// @desc    Delete user permanently (Admin only)
+// @route   DELETE /api/users/:id
+// @access  Private/Admin
+export const deleteUser = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const adminUser = await User.findById(req.user?._id);
+    const { adminPassword } = req.body;
+
+    if (!adminUser) {
+      res.status(401).json({ message: 'Admin not found' });
+      return;
+    }
+
+    if (!adminPassword) {
+      res.status(400).json({ message: 'Admin password is required to delete a user permanently' });
+      return;
+    }
+
+    const isMatch = await adminUser.matchPassword(adminPassword);
+    if (!isMatch) {
+      res.status(401).json({ message: 'Invalid admin password. Deletion aborted.' });
+      return;
+    }
+
+    const userToDelete = await User.findById(req.params.id);
+
+    if (userToDelete) {
+      if (userToDelete.role === 'Admin') {
+        res.status(403).json({ message: 'Cannot delete another Admin account' });
+        return;
+      }
+      await userToDelete.deleteOne();
+      res.json({ message: 'User permanently deleted' });
+    } else {
+      res.status(404).json({ message: 'User not found' });
+    }
+  } catch (error: any) {
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};

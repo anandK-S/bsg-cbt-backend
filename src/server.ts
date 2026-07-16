@@ -9,6 +9,7 @@ import authRoutes from './routes/authRoutes';
 import userRoutes from './routes/userRoutes';
 import examRoutes from './routes/examRoutes';
 import { attemptRoutes } from './routes/attemptRoutes';
+import path from 'path';
 
 dotenv.config();
 
@@ -76,6 +77,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/exams', examRoutes);
 app.use('/api/attempts', attemptRoutes);
+
+// Serve static files (media uploads)
+app.use('/uploads', express.static(path.join(__dirname, '../../public/uploads')));
 
 app.get('/', (req: Request, res: Response) => {
   res.send('BSG CBT Backend API is running');

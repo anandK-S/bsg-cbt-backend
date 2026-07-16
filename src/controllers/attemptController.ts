@@ -47,10 +47,11 @@ export const startExam = async (req: AuthRequest, res: Response): Promise<void> 
   let attempt = await ExamAttempt.findOne({ candidateId: req.user._id, examId: id, status: 'In-Progress' });
 
   if (!attempt) {
+    const totalSeconds = exam.durationSeconds ? exam.durationSeconds : (exam.durationMinutes * 60);
     attempt = new ExamAttempt({
       candidateId: req.user._id,
       examId: id,
-      timeRemaining: exam.durationMinutes * 60,
+      timeRemaining: totalSeconds,
       answers: exam.questions.map((q: any) => ({
         questionId: q.questionId._id,
         status: 'NotVisited',
@@ -257,10 +258,15 @@ export const getResult = async (req: AuthRequest, res: Response): Promise<void> 
   let result;
   
   if (req.user.role === 'Candidate') {
-    result = await Result.findOne({ candidateId: req.user._id, examId }).populate('examId', 'title');
+    result = await Result.findOne({ candidateId: req.user._id, examId }).populate('examId', 'title releaseResultsInstantly');
+    
+    // Check if results are released
+    if (result && result.examId && (result.examId as any).releaseResultsInstantly === false) {
+      res.status(403).json({ message: 'Results for this exam have not been released yet.' });
+      return;
+    }
   } else {
     // If Admin/Examiner wants to see it, they can pass attemptId or we just return all results for the exam
-    // For now, this route is mostly for the candidate. But we can allow admins to view specific candidate results if we passed candidateId in query.
     const query: any = { examId };
     if (req.query.candidateId) query.candidateId = req.query.candidateId;
     
@@ -290,9 +296,12 @@ export const getMyResults = async (req: AuthRequest, res: Response): Promise<voi
     return;
   }
 
-  const results = await Result.find({ candidateId: req.user._id })
-    .populate('examId', 'title durationMinutes category')
+  let results = await Result.find({ candidateId: req.user._id })
+    .populate('examId', 'title durationMinutes durationSeconds category releaseResultsInstantly')
     .sort({ createdAt: -1 });
+
+  // Filter out unreleased results
+  results = results.filter((r: any) => r.examId && (r.examId as any).releaseResultsInstantly !== false);
 
   res.status(200).json(results);
 };

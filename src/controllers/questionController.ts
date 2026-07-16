@@ -105,11 +105,14 @@ export const importQuestions = async (req: AuthRequest, res: Response): Promise<
 
     let contentsPayload: any = [];
     const basePrompt = `Extract the multiple choice questions from the following text/image and format them as a JSON array of objects.
-Each object must have the following keys:
+CRITICAL INSTRUCTIONS: 
+1. If the provided document contains the correct answers, ensure the "correctOptionIndex" strictly matches the answer key.
+2. If you absolutely cannot find any questions or readable text in the file, return a JSON object with a single key "error" explaining why (e.g. {"error": "The image is too blurry to read any text."}).
+3. Otherwise, return a JSON array of objects, where each object has:
 - "text": The question text
 - "options": An array of 4 string options
 - "correctOptionIndex": The 0-based index of the correct option
-- "category": A guessed category based on the question (e.g. "First Aid", "Knots")
+- "category": A guessed category based on the question (e.g. "Scouting", "First Aid", "Knots")
 `;
 
     if (mimeType.startsWith('image/')) {
@@ -187,12 +190,17 @@ Each object must have the following keys:
     const jsonMatch = aiText?.match(/```(?:json)?([\s\S]*?)```/) || [null, aiText];
     const jsonString = jsonMatch[1]?.trim() || '[]';
     
-    let parsedQuestions = [];
+    let parsedQuestions: any;
     try {
       parsedQuestions = JSON.parse(jsonString);
     } catch (parseError) {
       console.error('Error parsing JSON from AI response:', aiText);
       res.status(500).json({ message: 'AI returned invalid formatting. Please try again.' });
+      return;
+    }
+
+    if (parsedQuestions && parsedQuestions.error) {
+      res.status(400).json({ message: 'AI could not read file: ' + parsedQuestions.error });
       return;
     }
 
@@ -228,6 +236,9 @@ Each object must have the following keys:
     res.status(500).json({ message: 'Error parsing questions with AI: ' + (error?.message || error) });
   }
 };
+
+import ExamAttempt from '../models/ExamAttempt';
+import Result from '../models/Result';
 
 // @desc    Edit a question
 // @route   PUT /api/exams/:examId/questions/:questionId
@@ -274,7 +285,17 @@ export const editQuestion = async (req: AuthRequest, res: Response): Promise<voi
 
   question.text = text || question.text;
   question.options = options || question.options;
-  if (correctOptionIndex !== undefined) question.correctOptionIndex = Number(correctOptionIndex);
+  
+  let oldCorrectIndex = question.correctOptionIndex;
+  let triggeredReevaluation = false;
+  if (correctOptionIndex !== undefined) {
+    const newCorrectIndex = Number(correctOptionIndex);
+    if (newCorrectIndex !== oldCorrectIndex) {
+      triggeredReevaluation = true;
+    }
+    question.correctOptionIndex = newCorrectIndex;
+  }
+  
   question.acceptableAnswers = acceptableAnswers || question.acceptableAnswers;
   question.category = category || question.category;
   question.translations = translations || question.translations;
@@ -282,6 +303,49 @@ export const editQuestion = async (req: AuthRequest, res: Response): Promise<voi
   if (mediaUrl !== undefined) question.mediaUrl = mediaUrl;
 
   const updatedQuestion = await question.save();
+  
+  if (triggeredReevaluation) {
+    // Dynamic Re-evaluation Logic
+    // Find all submitted attempts for this exam
+    const submittedAttempts = await ExamAttempt.find({ 
+      examId, 
+      status: { $in: ['Submitted', 'Auto-Submitted'] } 
+    });
+    
+    // Also need to fetch all questions for this exam to re-calculate score
+    const fullExam = await Exam.findById(examId).populate('questions.questionId');
+    
+    if (fullExam && submittedAttempts.length > 0) {
+      for (const attempt of submittedAttempts) {
+        let score = 0;
+        let totalMarks = 0;
+        
+        attempt.answers.forEach((ans) => {
+          const examQuestion = fullExam.questions.find(
+            (q: any) => q.questionId && q.questionId._id.toString() === ans.questionId.toString()
+          );
+          if (examQuestion && examQuestion.questionId) {
+            totalMarks += examQuestion.marks;
+            const correctIndex = (examQuestion.questionId as any).correctOptionIndex;
+            if (
+              ans.selectedOptionIndex !== undefined &&
+              ans.selectedOptionIndex !== null &&
+              ans.selectedOptionIndex === correctIndex
+            ) {
+              score += examQuestion.marks;
+            }
+          }
+        });
+        
+        // Update the result document
+        await Result.updateOne(
+          { attemptId: attempt._id },
+          { $set: { score, totalMarks } }
+        );
+      }
+    }
+  }
+
   res.status(200).json(updatedQuestion);
 };
 
@@ -301,6 +365,13 @@ export const deleteQuestion = async (req: AuthRequest, res: Response): Promise<v
   // Authorization check
   if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
     res.status(403).json({ message: 'Not authorized' });
+    return;
+  }
+  
+  // Security Fix: Prevent deletion if there are active candidates
+  const activeAttempts = await ExamAttempt.findOne({ examId: examId, status: 'In-Progress' });
+  if (activeAttempts) {
+    res.status(400).json({ message: 'Cannot delete questions while candidates are currently taking the exam.' });
     return;
   }
 

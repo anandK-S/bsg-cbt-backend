@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import Exam from '../models/Exam';
+import ExamAttempt from '../models/ExamAttempt';
 import { AuthRequest } from '../middleware/authMiddleware';
 
 // @desc    Get all exams
@@ -29,6 +30,7 @@ export const getAvailableExams = async (req: AuthRequest, res: Response) => {
       title: exam.title,
       description: exam.description,
       durationMinutes: exam.durationMinutes,
+      durationSeconds: exam.durationSeconds,
       status: exam.status,
       questionCount: exam.questions.length,
       maxScore,
@@ -42,17 +44,20 @@ export const getAvailableExams = async (req: AuthRequest, res: Response) => {
 // @route   POST /api/exams
 // @access  Private/Examiner/Admin
 export const createExam = async (req: AuthRequest, res: Response) => {
-  const { title, description, category, durationMinutes, durationUnit, passingMarks, scheduledStartDate, scheduledEndDate, allowMultipleAttempts } = req.body;
+  const { title, description, category, durationMinutes, durationSeconds, durationUnit, passingMarks, scheduledStartDate, scheduledEndDate, allowMultipleAttempts, releaseResultsInstantly } = req.body;
 
   const exam = new Exam({
     title,
     description,
-    durationMinutes,
+    category,
+    durationMinutes: durationMinutes || 0,
+    durationSeconds: durationSeconds || 0,
     durationUnit: durationUnit || 'min',
     passingMarks: passingMarks || 50,
     scheduledStartDate,
     scheduledEndDate,
     allowMultipleAttempts,
+    releaseResultsInstantly: releaseResultsInstantly !== undefined ? releaseResultsInstantly : true,
     creatorId: req.user._id,
   });
 
@@ -108,7 +113,7 @@ export const updateExamStatus = async (req: AuthRequest, res: Response): Promise
 // @access  Private/Examiner/Admin
 export const updateExam = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { title, description, category, durationMinutes, durationUnit, passingMarks, scheduledStartDate, scheduledEndDate, allowMultipleAttempts } = req.body;
+  const { title, description, category, durationMinutes, durationSeconds, durationUnit, passingMarks, scheduledStartDate, scheduledEndDate, allowMultipleAttempts, releaseResultsInstantly } = req.body;
 
   const exam = await Exam.findById(id);
 
@@ -127,11 +132,13 @@ export const updateExam = async (req: AuthRequest, res: Response): Promise<void>
   if (description !== undefined) exam.description = description;
   if (category !== undefined) exam.category = category;
   if (durationMinutes !== undefined) exam.durationMinutes = durationMinutes;
+  if (durationSeconds !== undefined) exam.durationSeconds = durationSeconds;
   if (durationUnit) exam.durationUnit = durationUnit;
   if (passingMarks !== undefined) exam.passingMarks = passingMarks;
   if (scheduledStartDate !== undefined) exam.scheduledStartDate = scheduledStartDate || null;
   if (scheduledEndDate !== undefined) exam.scheduledEndDate = scheduledEndDate || null;
   if (allowMultipleAttempts !== undefined) exam.allowMultipleAttempts = allowMultipleAttempts;
+  if (releaseResultsInstantly !== undefined) exam.releaseResultsInstantly = releaseResultsInstantly;
 
   await exam.save();
   res.json({ message: 'Exam updated', exam });
@@ -154,8 +161,14 @@ export const deleteExam = async (req: AuthRequest, res: Response): Promise<void>
     res.status(403).json({ message: 'Not authorized to delete this exam' });
     return;
   }
+  
+  // Security Fix: Prevent deletion if there are active candidates
+  const activeAttempts = await ExamAttempt.findOne({ examId: id, status: 'In-Progress' });
+  if (activeAttempts) {
+    res.status(400).json({ message: 'Cannot delete this exam because candidates are currently taking it.' });
+    return;
+  }
 
   await Exam.findByIdAndDelete(id);
-  // Note: For a complete system, also delete associated Questions, Attempts, and Results
   res.json({ message: 'Exam removed successfully' });
 };

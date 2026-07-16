@@ -20,7 +20,17 @@ export const getSettings = async (req: Request, res: Response): Promise<void> =>
 // @route   PUT /api/settings
 // @access  Private/Admin
 export const updateSettings = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { platformName, supportEmail, maintenanceMode } = req.body;
+  const { 
+    platformName, 
+    supportEmail, 
+    maintenanceMode,
+    termsUrl,
+    privacyUrl,
+    maxFailedLoginAttempts,
+    require2FA,
+    strictBrowserLockdown,
+    defaultProctoringLevel
+  } = req.body;
 
   let settings = await Setting.findOne();
 
@@ -31,6 +41,12 @@ export const updateSettings = async (req: AuthRequest, res: Response): Promise<v
   if (platformName !== undefined) settings.platformName = platformName;
   if (supportEmail !== undefined) settings.supportEmail = supportEmail;
   if (maintenanceMode !== undefined) settings.maintenanceMode = maintenanceMode;
+  if (termsUrl !== undefined) settings.termsUrl = termsUrl;
+  if (privacyUrl !== undefined) settings.privacyUrl = privacyUrl;
+  if (maxFailedLoginAttempts !== undefined) settings.maxFailedLoginAttempts = maxFailedLoginAttempts;
+  if (require2FA !== undefined) settings.require2FA = require2FA;
+  if (strictBrowserLockdown !== undefined) settings.strictBrowserLockdown = strictBrowserLockdown;
+  if (defaultProctoringLevel !== undefined) settings.defaultProctoringLevel = defaultProctoringLevel;
 
   const updatedSettings = await settings.save();
   res.json(updatedSettings);

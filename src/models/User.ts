@@ -11,6 +11,8 @@ export interface IUser extends Document {
   rank?: string;
   profileImage?: string; // URL for profile picture
   status: 'Active' | 'Blocked';
+  failedLoginAttempts: number;
+  lockedUntil?: Date;
   matchPassword(enteredPassword: string): Promise<boolean>;
 }
 
@@ -25,6 +27,8 @@ const userSchema: Schema = new Schema(
     rank: { type: String },
     profileImage: { type: String },
     status: { type: String, enum: ['Active', 'Blocked'], default: 'Active' },
+    failedLoginAttempts: { type: Number, default: 0 },
+    lockedUntil: { type: Date },
   },
   { timestamps: true }
 );

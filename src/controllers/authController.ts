@@ -9,12 +9,34 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
 
-    const user = await User.findOne({ email });
-
+    const user = await User.findOne({ $or: [{ email: email }, { bsgId: email }] });
     const settings = await Setting.findOne();
     const isMaintenance = settings?.maintenanceMode ?? false;
+    const maxFailedAttempts = settings?.maxFailedLoginAttempts ?? 5;
 
-    if (user && (await user.matchPassword(password))) {
+    if (!user) {
+      res.status(401).json({ message: 'Invalid credentials' });
+      return;
+    }
+
+    if (user.status === 'Blocked') {
+      res.status(403).json({ message: 'User is blocked' });
+      return;
+    }
+
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+      res.status(403).json({ message: `Account is temporarily locked due to too many failed attempts. Try again later.` });
+      return;
+    }
+
+    if (await user.matchPassword(password)) {
+      // Reset failed attempts on success
+      if (user.failedLoginAttempts > 0 || user.lockedUntil) {
+        user.failedLoginAttempts = 0;
+        user.lockedUntil = undefined;
+        await user.save();
+      }
+
       if (isMaintenance && user.role !== 'Admin') {
         res.status(503).json({ 
           message: 'The platform is currently under maintenance. Please try again later.',
@@ -23,10 +45,7 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
         });
         return;
       }
-      if (user.status === 'Blocked') {
-        res.status(403).json({ message: 'User is blocked' });
-        return;
-      }
+
       const token = generateToken(res, user._id.toString());
 
       res.json({
@@ -39,7 +58,15 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
         token,
       });
     } else {
-      res.status(401).json({ message: 'Invalid email or password' });
+      // Increment failed attempts
+      user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+      if (user.failedLoginAttempts >= maxFailedAttempts) {
+        // Lock for 15 minutes
+        user.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
+      }
+      await user.save();
+
+      res.status(401).json({ message: 'Invalid credentials' });
     }
   } catch (error: any) {
     res.status(500).json({ message: error.message || 'Server error' });

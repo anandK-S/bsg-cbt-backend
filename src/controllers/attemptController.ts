@@ -82,7 +82,7 @@ export const startExam = async (req: AuthRequest, res: Response): Promise<void> 
 // @access  Private/Candidate
 export const heartbeatSync = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { answers, timeRemaining, warnings } = req.body;
+  const { answers, timeRemaining, warnings, timeSpentAnalytics } = req.body;
 
   const attempt = await ExamAttempt.findById(id);
 
@@ -98,6 +98,10 @@ export const heartbeatSync = async (req: AuthRequest, res: Response): Promise<vo
 
   attempt.answers = answers;
   attempt.timeRemaining = timeRemaining;
+  
+  if (timeSpentAnalytics) {
+    attempt.timeSpentAnalytics = timeSpentAnalytics;
+  }
   
   if (warnings !== undefined) {
     attempt.warnings = warnings;
@@ -116,7 +120,7 @@ export const heartbeatSync = async (req: AuthRequest, res: Response): Promise<vo
 // @access  Private/Candidate
 export const submitExam = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { answers, timeRemaining } = req.body;
+  const { answers, timeRemaining, timeSpentAnalytics } = req.body;
 
   const attempt = await ExamAttempt.findById(id);
 
@@ -130,12 +134,14 @@ export const submitExam = async (req: AuthRequest, res: Response): Promise<void>
     return;
   }
 
-  // Save final state if provided
   if (answers) {
     attempt.answers = answers;
   }
   if (timeRemaining !== undefined) {
     attempt.timeRemaining = timeRemaining;
+  }
+  if (timeSpentAnalytics) {
+    attempt.timeSpentAnalytics = timeSpentAnalytics;
   }
 
   const exam = await Exam.findById(attempt.examId).populate('questions.questionId');

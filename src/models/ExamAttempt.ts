@@ -13,6 +13,7 @@ export interface IExamAttempt extends Document {
   }[];
   timeRemaining: number;
   warnings: number;
+  timeSpentAnalytics?: { questionId: mongoose.Types.ObjectId; timeSpentSeconds: number }[];
 }
 
 const examAttemptSchema: Schema = new Schema(
@@ -39,6 +40,12 @@ const examAttemptSchema: Schema = new Schema(
     ],
     timeRemaining: { type: Number, required: true },
     warnings: { type: Number, default: 0 },
+    timeSpentAnalytics: [
+      {
+        questionId: { type: Schema.Types.ObjectId, ref: 'Question', required: true },
+        timeSpentSeconds: { type: Number, required: true },
+      },
+    ],
   },
   { timestamps: true }
 );

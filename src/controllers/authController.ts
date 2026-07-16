@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import User from '../models/User';
 import generateToken from '../utils/generateToken';
-
+import Setting from '../models/Setting';
 // @desc    Auth user & get token
 // @route   POST /api/auth/login
 // @access  Public
@@ -11,7 +11,14 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
 
     const user = await User.findOne({ email });
 
+    const settings = await Setting.findOne();
+    const isMaintenance = settings?.maintenanceMode ?? false;
+
     if (user && (await user.matchPassword(password))) {
+      if (isMaintenance && user.role === 'Candidate') {
+        res.status(503).json({ message: 'The platform is currently under maintenance. Please try again later.' });
+        return;
+      }
       if (user.status === 'Blocked') {
         res.status(403).json({ message: 'User is blocked' });
         return;
@@ -52,6 +59,14 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
     let assignedRole: 'Candidate' | 'Examiner' | 'Admin' = 'Candidate';
     if (adminCode && process.env.ADMIN_REGISTRATION_CODE && adminCode === process.env.ADMIN_REGISTRATION_CODE) {
       assignedRole = 'Admin';
+    }
+
+    const settings = await Setting.findOne();
+    const isMaintenance = settings?.maintenanceMode ?? false;
+    
+    if (isMaintenance && assignedRole === 'Candidate') {
+      res.status(503).json({ message: 'Registration is disabled while the platform is under maintenance.' });
+      return;
     }
 
     const user = await User.create({

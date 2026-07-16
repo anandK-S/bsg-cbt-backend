@@ -9,6 +9,7 @@ import authRoutes from './routes/authRoutes';
 import userRoutes from './routes/userRoutes';
 import examRoutes from './routes/examRoutes';
 import { attemptRoutes } from './routes/attemptRoutes';
+import settingRoutes from './routes/settingRoutes';
 import path from 'path';
 
 dotenv.config();
@@ -77,6 +78,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/exams', examRoutes);
 app.use('/api/attempts', attemptRoutes);
+app.use('/api/settings', settingRoutes);
 
 // Serve static files (media uploads)
 app.use('/uploads', express.static(path.join(__dirname, '../../public/uploads')));

@@ -3,6 +3,7 @@ import ExamAttempt from '../models/ExamAttempt';
 import Exam from '../models/Exam';
 import Result from '../models/Result';
 import { AuthRequest } from '../middleware/authMiddleware';
+import Setting from '../models/Setting';
 import { GoogleGenAI } from '@google/genai';
 
 // We initialize inside the function so it doesn't crash on startup if the key is missing
@@ -16,6 +17,12 @@ export const startExam = async (req: AuthRequest, res: Response): Promise<void> 
 
   if (!exam) {
     res.status(404).json({ message: 'Exam not found' });
+    return;
+  }
+
+  const settings = await Setting.findOne();
+  if (settings?.maintenanceMode && req.user.role === 'Candidate') {
+    res.status(503).json({ message: 'The platform is currently under maintenance. New exams cannot be started.' });
     return;
   }
 

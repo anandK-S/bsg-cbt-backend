@@ -136,13 +136,17 @@ export const submitExam = async (req: AuthRequest, res: Response): Promise<void>
   let score = 0;
   let totalMarks = 0;
 
+  // Calculate Total Marks
+  exam?.questions.forEach((q: any) => {
+    totalMarks += q.marks || 1;
+  });
+
   // Calculate Score
   attempt.answers.forEach((ans) => {
     const examQuestion = exam?.questions.find(
       (q: any) => q.questionId && q.questionId._id.toString() === ans.questionId.toString()
     );
     if (examQuestion && examQuestion.questionId) {
-      totalMarks += examQuestion.marks;
       const correctIndex = (examQuestion.questionId as any).correctOptionIndex;
       console.log(`QID: ${ans.questionId.toString()}, Selected: ${ans.selectedOptionIndex}, Correct: ${correctIndex}`);
       if (

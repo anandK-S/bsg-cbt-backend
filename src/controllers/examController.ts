@@ -9,12 +9,22 @@ import { AuthRequest } from '../middleware/authMiddleware';
 export const getExams = async (req: AuthRequest, res: Response) => {
   let exams;
   if (req.user.role === 'Admin') {
-    exams = await Exam.find({}).populate('creatorId', 'name email');
+    exams = await Exam.find({}).populate('creatorId', 'name email').lean();
   } else {
     // Examiner sees only their exams
-    exams = await Exam.find({ creatorId: req.user._id }).populate('creatorId', 'name email');
+    exams = await Exam.find({ creatorId: req.user._id }).populate('creatorId', 'name email').lean();
   }
-  res.json(exams);
+  
+  const formattedExams = await Promise.all(exams.map(async (exam: any) => {
+    const attemptCount = await ExamAttempt.countDocuments({ examId: exam._id, status: { $ne: 'In-Progress' } });
+    return {
+      ...exam,
+      questionCount: exam.questions ? exam.questions.length : 0,
+      attemptCount,
+    };
+  }));
+  
+  res.json(formattedExams);
 };
 
 // @desc    Get available exams for candidate

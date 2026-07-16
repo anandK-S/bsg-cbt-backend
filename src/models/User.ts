@@ -8,6 +8,7 @@ export interface IUser extends Document {
   role: 'Candidate' | 'Examiner' | 'Admin';
   bsgId?: string; // Optional for non-candidates
   section?: 'Scout' | 'Guide' | 'Rover' | 'Ranger' | 'Leader';
+  rank?: string;
   profileImage?: string; // URL for profile picture
   status: 'Active' | 'Blocked';
   matchPassword(enteredPassword: string): Promise<boolean>;
@@ -21,6 +22,7 @@ const userSchema: Schema = new Schema(
     role: { type: String, enum: ['Candidate', 'Examiner', 'Admin'], default: 'Candidate' },
     bsgId: { type: String }, // e.g., Scout/Guide ID
     section: { type: String, enum: ['Scout', 'Guide', 'Rover', 'Ranger', 'Leader'] },
+    rank: { type: String },
     profileImage: { type: String },
     status: { type: String, enum: ['Active', 'Blocked'], default: 'Active' },
   },

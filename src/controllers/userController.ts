@@ -53,8 +53,9 @@ export const changeUserPassword = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    if (!newPassword || newPassword.length < 6) {
-      res.status(400).json({ message: 'Password must be at least 6 characters' });
+    const passwordRegex = /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{6,}$/;
+    if (!newPassword || !passwordRegex.test(newPassword)) {
+      res.status(400).json({ message: 'Password must be at least 6 characters and contain a letter, a number, and a special character.' });
       return;
     }
 
@@ -122,7 +123,7 @@ export const getExaminerInsights = async (req: any, res: Response): Promise<void
     
     const attempts = await ExamAttempt.find({ 
       examId: { $in: examIds }, 
-      status: 'Completed' 
+      status: { $in: ['Submitted', 'Auto-Submitted', 'Blocked'] }
     }).populate('candidateId', 'name email section');
 
     res.json({ exams, attempts });

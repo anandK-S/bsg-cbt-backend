@@ -15,8 +15,12 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
     const isMaintenance = settings?.maintenanceMode ?? false;
 
     if (user && (await user.matchPassword(password))) {
-      if (isMaintenance && user.role === 'Candidate') {
-        res.status(503).json({ message: 'The platform is currently under maintenance. Please try again later.' });
+      if (isMaintenance && user.role !== 'Admin') {
+        res.status(503).json({ 
+          message: 'The platform is currently under maintenance. Please try again later.',
+          platformName: settings?.platformName || 'BSG CBT Portal',
+          supportEmail: settings?.supportEmail || 'support@bsg-india.org'
+        });
         return;
       }
       if (user.status === 'Blocked') {
@@ -56,6 +60,12 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
+    const passwordRegex = /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{6,}$/;
+    if (!passwordRegex.test(password)) {
+      res.status(400).json({ message: 'Password must be at least 6 characters and contain a letter, a number, and a special character.' });
+      return;
+    }
+
     let assignedRole: 'Candidate' | 'Examiner' | 'Admin' = 'Candidate';
     if (adminCode && process.env.ADMIN_REGISTRATION_CODE && adminCode === process.env.ADMIN_REGISTRATION_CODE) {
       assignedRole = 'Admin';
@@ -64,7 +74,7 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
     const settings = await Setting.findOne();
     const isMaintenance = settings?.maintenanceMode ?? false;
     
-    if (isMaintenance && assignedRole === 'Candidate') {
+    if (isMaintenance && assignedRole !== 'Admin') {
       res.status(503).json({ message: 'Registration is disabled while the platform is under maintenance.' });
       return;
     }
@@ -134,7 +144,7 @@ export const getUserProfile = async (req: any, res: Response): Promise<void> => 
 // @access  Private/Admin
 export const createExaminer = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, bsgId, section, rank } = req.body;
 
     const userExists = await User.findOne({ email });
 
@@ -143,11 +153,20 @@ export const createExaminer = async (req: Request, res: Response): Promise<void>
       return;
     }
 
+    const passwordRegex = /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{6,}$/;
+    if (!passwordRegex.test(password)) {
+      res.status(400).json({ message: 'Password must be at least 6 characters and contain a letter, a number, and a special character.' });
+      return;
+    }
+
     const user = await User.create({
       name,
       email,
       passwordHash: password,
       role: 'Examiner',
+      bsgId,
+      section,
+      rank
     });
 
     if (user) {
@@ -177,6 +196,11 @@ export const updateUserProfile = async (req: any, res: Response): Promise<void> 
     user.profileImage = req.body.profileImage !== undefined ? req.body.profileImage : user.profileImage;
     
     if (req.body.password) {
+      const passwordRegex = /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{6,}$/;
+      if (!passwordRegex.test(req.body.password)) {
+        res.status(400).json({ message: 'Password must be at least 6 characters and contain a letter, a number, and a special character.' });
+        return;
+      }
       user.passwordHash = req.body.password; // hook will hash it
     }
 

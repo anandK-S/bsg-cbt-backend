@@ -203,3 +203,29 @@ export const bulkImportUsers = async (req: any, res: Response): Promise<void> =>
     res.status(500).json({ message: error.message || 'Server error' });
   }
 };
+
+// @desc    Update user details (Admin only)
+// @route   PUT /api/users/:id/update
+// @access  Private/Admin
+export const updateUserByAdmin = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userToUpdate = await User.findById(req.params.id);
+    if (!userToUpdate) {
+      res.status(404).json({ message: 'User not found' });
+      return;
+    }
+
+    const { name, email, bsgId, section, rank } = req.body;
+    
+    if (name) userToUpdate.name = name;
+    if (email) userToUpdate.email = email;
+    if (bsgId !== undefined) userToUpdate.bsgId = bsgId;
+    if (section !== undefined) userToUpdate.section = section;
+    if (rank !== undefined) userToUpdate.rank = rank;
+
+    const updatedUser = await userToUpdate.save();
+    res.json({ message: 'User updated successfully', user: updatedUser });
+  } catch (error: any) {
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
+};

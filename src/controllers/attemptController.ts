@@ -433,10 +433,18 @@ export const getLiveAttempts = async (req: AuthRequest, res: Response): Promise<
   try {
     const liveAttempts = await ExamAttempt.find({ status: 'In-Progress' })
       .populate('candidateId', 'name bsgId section district')
-      .populate('examId', 'title')
+      .populate('examId', 'title creatorId')
       .sort({ updatedAt: -1 });
 
-    res.status(200).json(liveAttempts);
+    let filteredAttempts = liveAttempts;
+    if (req.user.role === 'Examiner') {
+      filteredAttempts = liveAttempts.filter(attempt => {
+        const exam = attempt.examId as any;
+        return exam && exam.creatorId && exam.creatorId.toString() === req.user._id.toString();
+      });
+    }
+
+    res.status(200).json(filteredAttempts);
   } catch (error: any) {
     res.status(500).json({ message: error.message || 'Server error' });
   }

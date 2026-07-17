@@ -35,7 +35,7 @@ export const addQuestion = async (req: AuthRequest, res: Response): Promise<void
 
   // Handle local file upload
   if (req.file) {
-    const uploadDir = path.join(__dirname, '../../public/uploads');
+    const uploadDir = path.join(process.cwd(), 'public/uploads');
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -269,7 +269,7 @@ export const editQuestion = async (req: AuthRequest, res: Response): Promise<voi
 
   // Handle local file upload for updating media
   if (req.file) {
-    const uploadDir = path.join(__dirname, '../../public/uploads');
+    const uploadDir = path.join(process.cwd(), 'public/uploads');
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }

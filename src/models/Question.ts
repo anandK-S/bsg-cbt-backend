@@ -6,7 +6,7 @@ export interface IQuestion extends Document {
   options: string[];
   correctOptionIndex?: number;
   acceptableAnswers?: string[];
-  type?: 'SingleChoice' | 'MultipleChoice' | 'Subjective';
+  type?: 'SingleChoice' | 'MultipleChoice' | 'Subjective' | 'LogicDecision';
   marks?: number;
   mediaUrl?: string;
   translations?: {
@@ -25,7 +25,7 @@ const questionSchema: Schema = new Schema(
     options: [{ type: String }],
     correctOptionIndex: { type: Number },
     acceptableAnswers: [{ type: String }],
-    type: { type: String, enum: ['SingleChoice', 'MultipleChoice', 'Subjective'], default: 'SingleChoice' },
+    type: { type: String, enum: ['SingleChoice', 'MultipleChoice', 'Subjective', 'LogicDecision'], default: 'SingleChoice' },
     marks: { type: Number, default: 1 },
     mediaUrl: { type: String },
     translations: {

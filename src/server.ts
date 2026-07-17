@@ -81,7 +81,7 @@ app.use('/api/attempts', attemptRoutes);
 app.use('/api/settings', settingRoutes);
 
 // Serve static files (media uploads)
-app.use('/uploads', express.static(path.join(__dirname, '../../public/uploads')));
+app.use('/uploads', express.static(path.join(process.cwd(), 'public/uploads')));
 
 app.get('/', (req: Request, res: Response) => {
   res.send('BSG CBT Backend API is running');

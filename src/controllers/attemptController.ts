@@ -323,7 +323,15 @@ export const getMyResults = async (req: AuthRequest, res: Response): Promise<voi
   }
 
   let results = await Result.find({ candidateId: req.user._id })
-    .populate('examId', 'title durationMinutes durationSeconds category releaseResultsInstantly')
+    .populate({
+      path: 'examId',
+      select: 'title durationMinutes durationSeconds category releaseResultsInstantly creatorId',
+      populate: {
+        path: 'creatorId',
+        select: 'name'
+      }
+    })
+    .populate('attemptId', 'timeRemaining startTime endTime')
     .sort({ createdAt: -1 });
 
   // Filter out unreleased results

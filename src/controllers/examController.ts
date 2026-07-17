@@ -45,6 +45,9 @@ export const getAvailableExams = async (req: AuthRequest, res: Response) => {
       questionCount: exam.questions.length,
       maxScore,
       creatorName: exam.creatorId ? (exam.creatorId as any).name : 'Unknown',
+      scheduledStartDate: exam.scheduledStartDate,
+      scheduledEndDate: exam.scheduledEndDate,
+      createdAt: exam.createdAt,
     };
   });
   res.json(formattedExams);

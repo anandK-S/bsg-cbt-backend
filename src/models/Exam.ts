@@ -17,6 +17,8 @@ export interface IExam extends Document {
   allowMultipleAttempts: boolean;
   releaseResultsInstantly: boolean;
   questions: { questionId: mongoose.Types.ObjectId; marks: number }[];
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 const examSchema: Schema = new Schema(

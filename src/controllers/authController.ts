@@ -237,6 +237,14 @@ export const updateUserProfile = async (req: any, res: Response): Promise<void> 
   const user = await User.findById(req.user._id);
 
   if (user) {
+    if (req.body.name) {
+      const nameRegex = /^[a-zA-Z\s]+$/;
+      if (!nameRegex.test(req.body.name)) {
+        res.status(400).json({ message: 'Name can only contain letters and spaces (no special characters or numbers).' });
+        return;
+      }
+    }
+    
     user.name = req.body.name || user.name;
     user.profileImage = req.body.profileImage !== undefined ? req.body.profileImage : user.profileImage;
     

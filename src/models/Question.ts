@@ -9,13 +9,14 @@ export interface IQuestion extends Document {
   type?: 'SingleChoice' | 'MultipleChoice' | 'Subjective' | 'LogicDecision';
   marks?: number;
   mediaUrl?: string;
+  category?: string;
+  section?: string;
   translations?: {
     hi?: {
       text: string;
       options: string[];
     };
   };
-  category?: string;
 }
 
 const questionSchema: Schema = new Schema(
@@ -35,6 +36,7 @@ const questionSchema: Schema = new Schema(
       },
     },
     category: { type: String },
+    section: { type: String },
   },
   { timestamps: true }
 );

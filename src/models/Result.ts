@@ -6,6 +6,8 @@ export interface IResult extends Document {
   examId: mongoose.Types.ObjectId;
   score: number;
   totalMarks: number;
+  answers: any[];
+  isReleased: boolean;
   aiFeedback?: string;
   violationReason?: string;
   timeTakenSeconds?: number;
@@ -19,6 +21,8 @@ const resultSchema: Schema = new Schema(
     examId: { type: Schema.Types.ObjectId, ref: 'Exam', required: true },
     score: { type: Number, required: true },
     totalMarks: { type: Number, required: true },
+    answers: [{ type: Schema.Types.Mixed }],
+    isReleased: { type: Boolean, default: false },
     aiFeedback: { type: String },
     violationReason: { type: String },
     timeTakenSeconds: { type: Number },

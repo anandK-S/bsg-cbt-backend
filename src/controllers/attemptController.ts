@@ -287,7 +287,7 @@ export const getResult = async (req: AuthRequest, res: Response): Promise<void> 
     result = await Result.findOne({ candidateId: req.user._id, examId }).populate('examId', 'title releaseResultsInstantly');
     
     // Check if results are released
-    if (result && result.examId && (result.examId as any).releaseResultsInstantly === false) {
+    if (result && result.examId && (result.examId as any).releaseResultsInstantly === false && !result.isReleased) {
       res.status(403).json({ message: 'Results for this exam have not been released yet.' });
       return;
     }
@@ -335,7 +335,7 @@ export const getMyResults = async (req: AuthRequest, res: Response): Promise<voi
     .sort({ createdAt: -1 });
 
   // Filter out unreleased results
-  results = results.filter((r: any) => r.examId && (r.examId as any).releaseResultsInstantly !== false);
+  results = results.filter((r: any) => r.isReleased || (r.examId && (r.examId as any).releaseResultsInstantly !== false));
 
   res.status(200).json(results);
 };
@@ -506,3 +506,28 @@ export const deleteExamResult = async (req: AuthRequest, res: Response): Promise
   
   res.status(200).json({ message: 'Result deleted successfully' });
 };
+
+// @desc    Toggle individual result release
+// @route   PUT /api/attempts/results/:resultId/release
+// @access  Private/Examiner/Admin
+export const toggleResultRelease = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { resultId } = req.params;
+  
+  const result = await Result.findById(resultId).populate('examId');
+  if (!result) {
+    res.status(404).json({ message: 'Result not found' });
+    return;
+  }
+  
+  const exam = result.examId as any;
+  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
+    res.status(403).json({ message: 'Not authorized' });
+    return;
+  }
+  
+  result.isReleased = !result.isReleased;
+  await result.save();
+  
+  res.status(200).json(result);
+};
+

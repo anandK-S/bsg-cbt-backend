@@ -1,6 +1,18 @@
 import express from 'express';
-import { startExam } from '../controllers/attemptController';
-import { heartbeatSync, submitExam, getResult, getDetailedResult, getMyResults, getLeaderboard, deleteAttempt, getLiveAttempts, clearExamResults, deleteExamResult } from '../controllers/attemptController';
+import { 
+  startExam, 
+  heartbeatSync, 
+  submitExam, 
+  getResult, 
+  getDetailedResult, 
+  getMyResults, 
+  getLeaderboard, 
+  deleteAttempt, 
+  getLiveAttempts, 
+  clearExamResults, 
+  deleteExamResult,
+  toggleResultRelease 
+} from '../controllers/attemptController';
 import { protect, admin, examiner } from '../middleware/authMiddleware';
 
 const examRoutes = express.Router();
@@ -14,6 +26,7 @@ attemptRoutes.post('/:id/submit', protect, submitExam);
 attemptRoutes.delete('/:id', protect, admin, deleteAttempt);
 attemptRoutes.get('/results/me', protect, getMyResults);
 attemptRoutes.get('/results/:resultId/detailed', protect, getDetailedResult); // Detailed review route (we will update the controller to handle this)
+attemptRoutes.put('/results/:resultId/release', protect, examiner, toggleResultRelease);
 attemptRoutes.get('/:examId/result', protect, getResult); // Keep for backwards compatibility for now
 attemptRoutes.delete('/:examId/results', protect, examiner, clearExamResults);
 attemptRoutes.delete('/result/:resultId', protect, examiner, deleteExamResult);

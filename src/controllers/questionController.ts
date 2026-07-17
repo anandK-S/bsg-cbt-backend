@@ -17,7 +17,7 @@ import path from 'path';
 // @access  Private/Examiner/Admin
 export const addQuestion = async (req: AuthRequest, res: Response): Promise<void> => {
   const { examId } = req.params;
-  let { text, options, correctOptionIndex, category, translations, marks, type, acceptableAnswers } = req.body;
+  let { text, options, correctOptionIndex, category, section, translations, marks, type, acceptableAnswers } = req.body;
   let mediaUrl = req.body.mediaUrl;
 
   const exam = await Exam.findById(examId);
@@ -57,6 +57,7 @@ export const addQuestion = async (req: AuthRequest, res: Response): Promise<void
     correctOptionIndex: correctOptionIndex ? Number(correctOptionIndex) : undefined,
     acceptableAnswers: acceptableAnswers || [],
     category,
+    section,
     translations,
     type,
     mediaUrl,
@@ -179,12 +180,31 @@ CRITICAL INSTRUCTIONS:
     }
 
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: contentsPayload,
-    });
+    
+    let response;
+    let retries = 3;
+    let delay = 2000;
+    while (retries > 0) {
+      try {
+        response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: contentsPayload,
+        });
+        break; // Success
+      } catch (err: any) {
+        const isUnavailable = err?.status === 503 || err?.status === 'UNAVAILABLE' || (err?.message && err.message.includes('503'));
+        if (isUnavailable) {
+          retries--;
+          if (retries === 0) throw err;
+          await new Promise(res => setTimeout(res, delay));
+          delay *= 2; // Exponential backoff
+        } else {
+          throw err;
+        }
+      }
+    }
 
-    const aiText = response.text;
+    const aiText = response?.text;
     
     // Attempt to parse JSON from the response (removing markdown code blocks if any)
     const jsonMatch = aiText?.match(/```(?:json)?([\s\S]*?)```/) || [null, aiText];
@@ -245,7 +265,7 @@ import Result from '../models/Result';
 // @access  Private/Examiner/Admin
 export const editQuestion = async (req: AuthRequest, res: Response): Promise<void> => {
   const { examId, questionId } = req.params;
-  let { text, options, correctOptionIndex, category, translations, type, acceptableAnswers } = req.body;
+  let { text, options, correctOptionIndex, category, section, translations, type, acceptableAnswers } = req.body;
   let mediaUrl = req.body.mediaUrl;
 
   const exam = await Exam.findById(examId);
@@ -298,6 +318,7 @@ export const editQuestion = async (req: AuthRequest, res: Response): Promise<voi
   
   question.acceptableAnswers = acceptableAnswers || question.acceptableAnswers;
   question.category = category || question.category;
+  question.section = section || question.section;
   question.translations = translations || question.translations;
   question.type = type || question.type;
   if (mediaUrl !== undefined) question.mediaUrl = mediaUrl;
@@ -389,3 +410,32 @@ export const deleteQuestion = async (req: AuthRequest, res: Response): Promise<v
 
   res.status(200).json({ message: 'Question removed successfully' });
 };
+
+// @desc    Auto translate text to Hindi
+// @route   POST /api/exams/translate
+// @access  Private/Examiner/Admin
+export const autoTranslate = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { text } = req.body;
+  if (!text) {
+    res.status(400).json({ message: 'No text provided' });
+    return;
+  }
+  
+  if (!process.env.GEMINI_API_KEY) {
+    res.status(200).json({ translatedText: text + ' (Translation API missing)' });
+    return;
+  }
+  
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `Translate the following text to Hindi. Only return the translated Hindi text without any formatting, quotes, or markdown. Text to translate:\n\n${text}`,
+    });
+    res.status(200).json({ translatedText: response.text?.trim() });
+  } catch (error: any) {
+    console.error('Translation error:', error);
+    res.status(500).json({ message: 'Translation failed: ' + (error?.message || error) });
+  }
+};
+

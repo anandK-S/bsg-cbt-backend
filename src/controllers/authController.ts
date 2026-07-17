@@ -54,6 +54,9 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
         email: user.email,
         role: user.role,
         bsgId: user.bsgId,
+        district: user.district,
+        unitNumber: user.unitNumber,
+        unitName: user.unitName,
         profileImage: user.profileImage,
         token,
       });
@@ -78,12 +81,18 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
 // @access  Public
 export const registerUser = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, email, password, bsgId, section, adminCode } = req.body;
+    const { name, email, password, bsgId, section, adminCode, district, unitNumber, unitName } = req.body;
 
     const userExists = await User.findOne({ email });
 
     if (userExists) {
       res.status(400).json({ message: 'User already exists' });
+      return;
+    }
+
+    const nameRegex = /^[a-zA-Z\s]+$/;
+    if (!nameRegex.test(name)) {
+      res.status(400).json({ message: 'Name can only contain letters and spaces (no special characters or numbers).' });
       return;
     }
 
@@ -113,6 +122,9 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
       role: assignedRole,
       bsgId: assignedRole === 'Candidate' ? bsgId : undefined,
       section: assignedRole === 'Candidate' ? section : undefined,
+      district: assignedRole === 'Candidate' ? district : undefined,
+      unitNumber: assignedRole === 'Candidate' ? unitNumber : undefined,
+      unitName: assignedRole === 'Candidate' ? unitName : undefined,
     });
 
     if (user) {
@@ -124,6 +136,9 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
         email: user.email,
         role: user.role,
         bsgId: user.bsgId,
+        district: user.district,
+        unitNumber: user.unitNumber,
+        unitName: user.unitName,
         profileImage: user.profileImage,
         token,
       });
@@ -159,6 +174,9 @@ export const getUserProfile = async (req: any, res: Response): Promise<void> => 
       email: user.email,
       role: user.role,
       bsgId: user.bsgId,
+      district: user.district,
+      unitNumber: user.unitNumber,
+      unitName: user.unitName,
       profileImage: user.profileImage,
     });
   } else {
@@ -239,6 +257,9 @@ export const updateUserProfile = async (req: any, res: Response): Promise<void> 
       email: updatedUser.email,
       role: updatedUser.role,
       bsgId: updatedUser.bsgId,
+      district: updatedUser.district,
+      unitNumber: updatedUser.unitNumber,
+      unitName: updatedUser.unitName,
       profileImage: updatedUser.profileImage,
     });
   } else {

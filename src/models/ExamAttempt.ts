@@ -13,6 +13,7 @@ export interface IExamAttempt extends Document {
   }[];
   timeRemaining: number;
   warnings: number;
+  violationReason?: string;
   timeSpentAnalytics?: { questionId: mongoose.Types.ObjectId; timeSpentSeconds: number }[];
 }
 
@@ -27,7 +28,7 @@ const examAttemptSchema: Schema = new Schema(
     },
     startTime: { type: Date, default: Date.now },
     endTime: { type: Date },
-  answers: [
+    answers: [
       {
         questionId: { type: Schema.Types.ObjectId, ref: 'Question', required: true },
         selectedOptionIndex: { type: Number },
@@ -40,6 +41,7 @@ const examAttemptSchema: Schema = new Schema(
     ],
     timeRemaining: { type: Number, required: true },
     warnings: { type: Number, default: 0 },
+    violationReason: { type: String },
     timeSpentAnalytics: [
       {
         questionId: { type: Schema.Types.ObjectId, ref: 'Question', required: true },

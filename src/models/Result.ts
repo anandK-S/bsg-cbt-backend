@@ -7,6 +7,8 @@ export interface IResult extends Document {
   score: number;
   totalMarks: number;
   aiFeedback?: string;
+  violationReason?: string;
+  timeTakenSeconds?: number;
   submittedAt: Date;
 }
 
@@ -18,6 +20,8 @@ const resultSchema: Schema = new Schema(
     score: { type: Number, required: true },
     totalMarks: { type: Number, required: true },
     aiFeedback: { type: String },
+    violationReason: { type: String },
+    timeTakenSeconds: { type: Number },
     submittedAt: { type: Date, default: Date.now },
   },
   { timestamps: true }

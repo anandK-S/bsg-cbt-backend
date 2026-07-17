@@ -215,13 +215,14 @@ export const updateUserByAdmin = async (req: AuthRequest, res: Response): Promis
       return;
     }
 
-    const { name, email, bsgId, section, rank } = req.body;
+    const { name, email, bsgId, section, rank, district } = req.body;
     
     if (name) userToUpdate.name = name;
     if (email) userToUpdate.email = email;
     if (bsgId !== undefined) userToUpdate.bsgId = bsgId;
     if (section !== undefined) userToUpdate.section = section;
     if (rank !== undefined) userToUpdate.rank = rank;
+    if (district !== undefined) userToUpdate.district = district;
 
     const updatedUser = await userToUpdate.save();
     res.json({ message: 'User updated successfully', user: updatedUser });

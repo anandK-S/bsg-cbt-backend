@@ -9,6 +9,9 @@ export interface IUser extends Document {
   bsgId?: string; // Optional for non-candidates
   section?: 'Scout' | 'Guide' | 'Rover' | 'Ranger' | 'Leader';
   rank?: string;
+  district?: string;
+  unitNumber?: string;
+  unitName?: string;
   profileImage?: string; // URL for profile picture
   status: 'Active' | 'Blocked';
   failedLoginAttempts: number;
@@ -25,6 +28,9 @@ const userSchema: Schema = new Schema(
     bsgId: { type: String }, // e.g., Scout/Guide ID
     section: { type: String, enum: ['Scout', 'Guide', 'Rover', 'Ranger', 'Leader'] },
     rank: { type: String },
+    district: { type: String },
+    unitNumber: { type: String },
+    unitName: { type: String },
     profileImage: { type: String },
     status: { type: String, enum: ['Active', 'Blocked'], default: 'Active' },
     failedLoginAttempts: { type: Number, default: 0 },

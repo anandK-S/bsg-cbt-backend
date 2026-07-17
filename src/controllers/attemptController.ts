@@ -143,6 +143,9 @@ export const submitExam = async (req: AuthRequest, res: Response): Promise<void>
   if (timeSpentAnalytics) {
     attempt.timeSpentAnalytics = timeSpentAnalytics;
   }
+  if (req.body.violationReason) {
+    (attempt as any).violationReason = req.body.violationReason;
+  }
 
   const exam = await Exam.findById(attempt.examId).populate('questions.questionId');
 
@@ -202,14 +205,20 @@ Do not provide a generic response; write directly to the candidate as a supporti
     }
   }
 
-  const result = new Result({
+  const resultData: any = {
     attemptId: attempt._id,
     candidateId: attempt.candidateId,
     examId: attempt.examId,
     score,
     totalMarks,
     aiFeedback,
-  });
+  };
+  
+  if (req.body.violationReason) {
+    resultData.violationReason = req.body.violationReason;
+  }
+
+  const result = new Result(resultData);
 
   await result.save();
 
@@ -328,12 +337,23 @@ export const getMyResults = async (req: AuthRequest, res: Response): Promise<voi
 // @access  Private (All Authenticated)
 export const getLeaderboard = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { examId } = req.query;
+    const { examId, startDate, endDate } = req.query;
     const filter: any = {};
     if (examId && examId !== 'All') {
       filter.examId = examId;
     }
-    const results = await Result.find(filter).populate('candidateId', 'name bsgId section role');
+    
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) filter.createdAt.$gte = new Date(startDate as string);
+      if (endDate) {
+        const end = new Date(endDate as string);
+        end.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = end;
+      }
+    }
+    
+    const results = await Result.find(filter).populate('candidateId', 'name bsgId section role district');
 
     // Aggregate by candidate
     const candidateMap = new Map();
@@ -348,6 +368,7 @@ export const getLeaderboard = async (req: AuthRequest, res: Response): Promise<v
           name: r.candidateId.name,
           bsgId: r.candidateId.bsgId,
           section: r.candidateId.section,
+          district: r.candidateId.district,
           totalScore: 0,
           totalMarksPossible: 0,
           examsTaken: 0,
@@ -411,7 +432,7 @@ export const deleteAttempt = async (req: AuthRequest, res: Response): Promise<vo
 export const getLiveAttempts = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const liveAttempts = await ExamAttempt.find({ status: 'In-Progress' })
-      .populate('candidateId', 'name bsgId section')
+      .populate('candidateId', 'name bsgId section district')
       .populate('examId', 'title')
       .sort({ updatedAt: -1 });
 

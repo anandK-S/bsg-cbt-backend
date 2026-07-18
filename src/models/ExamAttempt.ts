@@ -15,6 +15,9 @@ export interface IExamAttempt extends Document {
   warnings: number;
   violationReason?: string;
   timeSpentAnalytics?: { questionId: mongoose.Types.ObjectId; timeSpentSeconds: number }[];
+  // Timestamp fields added by Mongoose
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 const examAttemptSchema: Schema = new Schema(

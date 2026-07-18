@@ -441,12 +441,38 @@ export const getLiveAttempts = async (req: AuthRequest, res: Response): Promise<
   try {
     const liveAttempts = await ExamAttempt.find({ status: 'In-Progress' })
       .populate('candidateId', 'name bsgId section district')
-      .populate('examId', 'title creatorId')
+      .populate('examId', 'title creatorId questions')
       .sort({ updatedAt: -1 });
 
-    let filteredAttempts = liveAttempts;
+    const cutoffTime = new Date(Date.now() - 4 * 60 * 60 * 1000); // 4 hours ago
+    const validAttempts = [];
+
+    for (const attempt of liveAttempts) {
+      if (attempt.updatedAt && attempt.updatedAt < cutoffTime) {
+        // Abandoned attempt: create disqualified result
+        const exam = attempt.examId as any;
+        const totalMarks = exam?.questions?.reduce((acc: number, q: any) => acc + (q.marks || 1), 0) || 0;
+        
+        await Result.create({
+          candidateId: attempt.candidateId,
+          examId: attempt.examId,
+          answers: attempt.answers || [],
+          score: 0,
+          totalMarks,
+          violationReason: 'Abandoned due to inactivity',
+          isReleased: true
+        });
+
+        // Delete the stuck attempt
+        await ExamAttempt.findByIdAndDelete(attempt._id);
+      } else {
+        validAttempts.push(attempt);
+      }
+    }
+
+    let filteredAttempts = validAttempts;
     if (req.user.role === 'Examiner') {
-      filteredAttempts = liveAttempts.filter(attempt => {
+      filteredAttempts = validAttempts.filter(attempt => {
         const exam = attempt.examId as any;
         return exam && exam.creatorId && exam.creatorId.toString() === req.user._id.toString();
       });
@@ -531,3 +557,42 @@ export const toggleResultRelease = async (req: AuthRequest, res: Response): Prom
   res.status(200).json(result);
 };
 
+// @desc    Cancel an active attempt
+// @route   POST /api/attempts/:id/cancel
+// @access  Private/Examiner/Admin
+export const cancelAttempt = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { id } = req.params;
+
+  const attempt = await ExamAttempt.findById(id).populate('examId');
+  if (!attempt) {
+    res.status(404).json({ message: 'Attempt not found' });
+    return;
+  }
+
+  const exam = attempt.examId as any;
+  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
+    res.status(403).json({ message: 'Not authorized' });
+    return;
+  }
+
+  if (attempt.status !== 'In-Progress') {
+    res.status(400).json({ message: 'Can only cancel in-progress attempts' });
+    return;
+  }
+
+  // Create a disqualified Result instead of just deleting
+  const result = await Result.create({
+    candidateId: attempt.candidateId,
+    examId: attempt.examId,
+    answers: attempt.answers || [],
+    score: 0,
+    totalMarks: exam.questions?.reduce((acc: number, q: any) => acc + (q.marks || 1), 0) || 0,
+    violationReason: 'Cancelled by examiner due to rule violation',
+    isReleased: true // Release immediately so candidate sees it
+  });
+
+  // Delete the live attempt
+  await ExamAttempt.findByIdAndDelete(id);
+
+  res.status(200).json({ message: 'Attempt cancelled and disqualified successfully', result });
+};

@@ -52,5 +52,8 @@ const examAttemptSchema: Schema = new Schema(
   { timestamps: true }
 );
 
+examAttemptSchema.index({ examId: 1, status: 1 });
+examAttemptSchema.index({ candidateId: 1 });
+
 const ExamAttempt = mongoose.model<IExamAttempt>('ExamAttempt', examAttemptSchema);
 export default ExamAttempt;

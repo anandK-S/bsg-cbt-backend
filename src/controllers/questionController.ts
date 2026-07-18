@@ -318,8 +318,8 @@ export const editQuestion = async (req: AuthRequest, res: Response): Promise<voi
   
   question.acceptableAnswers = acceptableAnswers || question.acceptableAnswers;
   question.category = category || question.category;
-  question.section = section || question.section;
-  question.translations = translations || question.translations;
+  question.textHindi = req.body.textHindi !== undefined ? req.body.textHindi : question.textHindi;
+  question.optionsHindi = req.body.optionsHindi !== undefined ? req.body.optionsHindi : question.optionsHindi;
   question.type = type || question.type;
   if (mediaUrl !== undefined) question.mediaUrl = mediaUrl;
 
@@ -411,18 +411,18 @@ export const deleteQuestion = async (req: AuthRequest, res: Response): Promise<v
   res.status(200).json({ message: 'Question removed successfully' });
 };
 
-// @desc    Auto translate text to Hindi
+// @desc    Auto translate text
 // @route   POST /api/exams/translate
 // @access  Private/Examiner/Admin
 export const autoTranslate = async (req: AuthRequest, res: Response): Promise<void> => {
-  const { text } = req.body;
+  const { text, targetLanguage = 'Hindi' } = req.body;
   if (!text) {
     res.status(400).json({ message: 'No text provided' });
     return;
   }
   
   if (!process.env.GEMINI_API_KEY) {
-    res.status(200).json({ translatedText: text + ' (Translation API missing)' });
+    res.status(200).json({ translatedText: text + ` (Translation API missing)` });
     return;
   }
   
@@ -430,7 +430,7 @@ export const autoTranslate = async (req: AuthRequest, res: Response): Promise<vo
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: `Translate the following text to Hindi. Only return the translated Hindi text without any formatting, quotes, or markdown. Text to translate:\n\n${text}`,
+      contents: `Translate the following text to ${targetLanguage}. Only return the translated ${targetLanguage} text without any formatting, quotes, or markdown. Text to translate:\n\n${text}`,
     });
     res.status(200).json({ translatedText: response.text?.trim() });
   } catch (error: any) {

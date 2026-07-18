@@ -48,5 +48,8 @@ const examSchema: Schema = new Schema(
   { timestamps: true }
 );
 
+examSchema.index({ creatorId: 1 });
+examSchema.index({ status: 1 });
+
 const Exam = mongoose.model<IExam>('Exam', examSchema);
 export default Exam;

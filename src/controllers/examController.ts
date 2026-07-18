@@ -8,6 +8,8 @@ import { AuthRequest } from '../middleware/authMiddleware';
 // @access  Private/Examiner/Admin
 export const getExams = async (req: AuthRequest, res: Response) => {
   let exams;
+  let examIds: any[] = [];
+  
   if (req.user.role === 'Admin') {
     exams = await Exam.find({}).populate('creatorId', 'name email').lean();
   } else {
@@ -15,14 +17,26 @@ export const getExams = async (req: AuthRequest, res: Response) => {
     exams = await Exam.find({ creatorId: req.user._id }).populate('creatorId', 'name email').lean();
   }
   
-  const formattedExams = await Promise.all(exams.map(async (exam: any) => {
-    const attemptCount = await ExamAttempt.countDocuments({ examId: exam._id, status: { $ne: 'In-Progress' } });
+  examIds = exams.map(e => e._id);
+  
+  // Single query to get attempt counts for all these exams
+  const attemptCounts = await ExamAttempt.aggregate([
+    { $match: { examId: { $in: examIds }, status: { $ne: 'In-Progress' } } },
+    { $group: { _id: '$examId', count: { $sum: 1 } } }
+  ]);
+  
+  const attemptCountMap = new Map();
+  attemptCounts.forEach(item => {
+    attemptCountMap.set(item._id.toString(), item.count);
+  });
+  
+  const formattedExams = exams.map((exam: any) => {
     return {
       ...exam,
       questionCount: exam.questions ? exam.questions.length : 0,
-      attemptCount,
+      attemptCount: attemptCountMap.get(exam._id.toString()) || 0,
     };
-  }));
+  });
   
   res.json(formattedExams);
 };
@@ -31,7 +45,16 @@ export const getExams = async (req: AuthRequest, res: Response) => {
 // @route   GET /api/exams/available
 // @access  Private
 export const getAvailableExams = async (req: AuthRequest, res: Response) => {
-  const exams = await Exam.find({ status: 'Published' }).populate('creatorId', 'name');
+  const now = new Date();
+  const exams = await Exam.find({
+    $or: [
+      { status: 'Published' },
+      {
+        scheduledStartDate: { $lte: now },
+        scheduledEndDate: { $gte: now },
+      }
+    ]
+  }).populate('creatorId', 'name');
   const formattedExams = exams.map(exam => {
     let maxScore = 0;
     exam.questions.forEach((q: any) => { maxScore += q.marks; });

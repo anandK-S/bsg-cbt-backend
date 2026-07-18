@@ -11,7 +11,8 @@ import {
   getLiveAttempts, 
   clearExamResults, 
   deleteExamResult,
-  toggleResultRelease 
+  toggleResultRelease,
+  cancelAttempt
 } from '../controllers/attemptController';
 import { protect, admin, examiner } from '../middleware/authMiddleware';
 
@@ -22,6 +23,7 @@ const attemptRoutes = express.Router();
 attemptRoutes.get('/leaderboard', protect, getLeaderboard);
 attemptRoutes.get('/live', protect, getLiveAttempts);
 attemptRoutes.post('/:id/heartbeat', protect, heartbeatSync);
+attemptRoutes.post('/:id/cancel', protect, examiner, cancelAttempt);
 attemptRoutes.post('/:id/submit', protect, submitExam);
 attemptRoutes.delete('/:id', protect, admin, deleteAttempt);
 attemptRoutes.get('/results/me', protect, getMyResults);

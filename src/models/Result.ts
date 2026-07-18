@@ -31,5 +31,8 @@ const resultSchema: Schema = new Schema(
   { timestamps: true }
 );
 
+resultSchema.index({ candidateId: 1 });
+resultSchema.index({ examId: 1 });
+
 const Result = mongoose.model<IResult>('Result', resultSchema);
 export default Result;

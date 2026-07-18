@@ -6,17 +6,12 @@ export interface IQuestion extends Document {
   options: string[];
   correctOptionIndex?: number;
   acceptableAnswers?: string[];
-  type?: 'SingleChoice' | 'MultipleChoice' | 'Subjective' | 'LogicDecision';
+  type?: 'SingleChoice' | 'MultipleChoice' | 'Subjective';
   marks?: number;
   mediaUrl?: string;
   category?: string;
-  section?: string;
-  translations?: {
-    hi?: {
-      text: string;
-      options: string[];
-    };
-  };
+  textHindi?: string;
+  optionsHindi?: string[];
 }
 
 const questionSchema: Schema = new Schema(
@@ -26,17 +21,12 @@ const questionSchema: Schema = new Schema(
     options: [{ type: String }],
     correctOptionIndex: { type: Number },
     acceptableAnswers: [{ type: String }],
-    type: { type: String, enum: ['SingleChoice', 'MultipleChoice', 'Subjective', 'LogicDecision'], default: 'SingleChoice' },
+    type: { type: String, enum: ['SingleChoice', 'MultipleChoice', 'Subjective'], default: 'SingleChoice' },
     marks: { type: Number, default: 1 },
     mediaUrl: { type: String },
-    translations: {
-      hi: {
-        text: { type: String },
-        options: [{ type: String }],
-      },
-    },
+    textHindi: { type: String },
+    optionsHindi: [{ type: String }],
     category: { type: String },
-    section: { type: String },
   },
   { timestamps: true }
 );

@@ -10,14 +10,16 @@ import userRoutes from './routes/userRoutes';
 import examRoutes from './routes/examRoutes';
 import { attemptRoutes } from './routes/attemptRoutes';
 import settingRoutes from './routes/settingRoutes';
+import { startScheduler } from './utils/scheduler';
 import path from 'path';
 
 dotenv.config();
 
 const port = process.env.PORT || 5000;
 
-// Connect to MongoDB
+// Connect to MongoDB and start background scheduler
 connectDB();
+startScheduler();
 
 const app = express();
 const httpServer = createServer(app);

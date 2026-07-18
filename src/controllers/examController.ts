@@ -80,7 +80,7 @@ export const getAvailableExams = async (req: AuthRequest, res: Response) => {
 // @route   POST /api/exams
 // @access  Private/Examiner/Admin
 export const createExam = async (req: AuthRequest, res: Response) => {
-  const { title, description, category, durationMinutes, durationSeconds, durationUnit, passingMarks, scheduledStartDate, scheduledEndDate, allowMultipleAttempts, releaseResultsInstantly } = req.body;
+  const { title, description, category, durationMinutes, durationSeconds, durationUnit, passingMarks, scheduledStartDate, scheduledEndDate, allowMultipleAttempts, releaseResultsInstantly, issueCertificate } = req.body;
 
   const exam = new Exam({
     title,
@@ -94,6 +94,7 @@ export const createExam = async (req: AuthRequest, res: Response) => {
     scheduledEndDate,
     allowMultipleAttempts,
     releaseResultsInstantly: releaseResultsInstantly !== undefined ? releaseResultsInstantly : true,
+    issueCertificate: issueCertificate !== undefined ? issueCertificate : true,
     creatorId: req.user._id,
   });
 
@@ -149,7 +150,7 @@ export const updateExamStatus = async (req: AuthRequest, res: Response): Promise
 // @access  Private/Examiner/Admin
 export const updateExam = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { title, description, category, durationMinutes, durationSeconds, durationUnit, passingMarks, scheduledStartDate, scheduledEndDate, allowMultipleAttempts, releaseResultsInstantly } = req.body;
+  const { title, description, category, durationMinutes, durationSeconds, durationUnit, passingMarks, scheduledStartDate, scheduledEndDate, allowMultipleAttempts, releaseResultsInstantly, issueCertificate } = req.body;
 
   const exam = await Exam.findById(id);
 
@@ -175,6 +176,7 @@ export const updateExam = async (req: AuthRequest, res: Response): Promise<void>
   if (scheduledEndDate !== undefined) exam.scheduledEndDate = scheduledEndDate || null;
   if (allowMultipleAttempts !== undefined) exam.allowMultipleAttempts = allowMultipleAttempts;
   if (releaseResultsInstantly !== undefined) exam.releaseResultsInstantly = releaseResultsInstantly;
+  if (issueCertificate !== undefined) exam.issueCertificate = issueCertificate;
 
   await exam.save();
   res.json({ message: 'Exam updated', exam });

@@ -446,9 +446,9 @@ export const getLiveAttempts = async (req: AuthRequest, res: Response): Promise<
 
     const cutoffTime = new Date(Date.now() - 4 * 60 * 60 * 1000); // 4 hours ago
     const validAttempts = [];
-
     for (const attempt of liveAttempts) {
-      if (attempt.updatedAt && attempt.updatedAt < cutoffTime) {
+      const attemptObj = attempt as any;
+      if (attemptObj.updatedAt && attemptObj.updatedAt < cutoffTime) {
         // Abandoned attempt: create disqualified result
         const exam = attempt.examId as any;
         const totalMarks = exam?.questions?.reduce((acc: number, q: any) => acc + (q.marks || 1), 0) || 0;

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import User from '../models/User';
 import generateToken from '../utils/generateToken';
 import Setting from '../models/Setting';
+import jwt from 'jsonwebtoken';
 // @desc    Auth user & get token
 // @route   POST /api/auth/login
 // @access  Public
@@ -31,11 +32,10 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
 
     if (await user.matchPassword(password)) {
       // Reset failed attempts on success
-      if (user.failedLoginAttempts > 0 || user.lockedUntil) {
-        user.failedLoginAttempts = 0;
-        user.lockedUntil = undefined;
-        await user.save();
-      }
+      user.failedLoginAttempts = 0;
+      user.lockedUntil = undefined;
+      user.lastLogin = new Date();
+      await user.save();
 
       if (isMaintenance && user.role !== 'Admin') {
         res.status(503).json({ 
@@ -153,7 +153,17 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
 // @desc    Logout user / clear cookie
 // @route   POST /api/auth/logout
 // @access  Public
-export const logoutUser = (req: Request, res: Response) => {
+export const logoutUser = async (req: Request, res: Response): Promise<void> => {
+  const token = req.cookies.jwt;
+  if (token) {
+    try {
+      const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string);
+      await User.findByIdAndUpdate(decoded.id, { lastLogout: new Date() });
+    } catch (error) {
+      console.error('Error decoding token for logout tracking:', error);
+    }
+  }
+
   res.cookie('jwt', '', {
     httpOnly: true,
     expires: new Date(0),

@@ -40,6 +40,22 @@ export const unblockUser = async (req: AuthRequest, res: Response): Promise<void
   }
 };
 
+// @desc    Unlock user account (reset failed login attempts)
+// @route   PUT /api/users/:id/unlock
+// @access  Private/Admin
+export const unlockUser = async (req: AuthRequest, res: Response): Promise<void> => {
+  const user = await User.findById(req.params.id);
+
+  if (user) {
+    user.failedLoginAttempts = 0;
+    user.lockedUntil = undefined;
+    const updatedUser = await user.save();
+    res.json({ message: 'User account unlocked', user: updatedUser });
+  } else {
+    res.status(404).json({ message: 'User not found' });
+  }
+};
+
 // @desc    Change user password (Admin only)
 // @route   PUT /api/users/:id/password
 // @access  Private/Admin

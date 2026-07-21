@@ -1,5 +1,5 @@
 import express from 'express';
-import { getUsers, blockUser, unblockUser, changeUserPassword, deleteUser, getExaminerInsights, bulkImportUsers, updateUserByAdmin } from '../controllers/userController';
+import { getUsers, blockUser, unblockUser, unlockUser, changeUserPassword, deleteUser, getExaminerInsights, bulkImportUsers, updateUserByAdmin } from '../controllers/userController';
 import { protect, admin } from '../middleware/authMiddleware';
 import { auditLog } from '../middleware/auditMiddleware';
 
@@ -13,6 +13,7 @@ router.route('/bulk-import').post(protect, admin, upload.single('file'), auditLo
 router.route('/:id').delete(protect, admin, auditLog('DELETED_USER_PERMANENTLY'), deleteUser);
 router.route('/:id/block').put(protect, admin, auditLog('BLOCKED_USER'), blockUser);
 router.route('/:id/unblock').put(protect, admin, auditLog('UNBLOCKED_USER'), unblockUser);
+router.route('/:id/unlock').put(protect, admin, auditLog('UNLOCKED_USER'), unlockUser);
 router.route('/:id/password').put(protect, admin, auditLog('CHANGED_USER_PASSWORD'), changeUserPassword);
 router.route('/:id/update').put(protect, admin, auditLog('UPDATED_USER_BY_ADMIN'), updateUserByAdmin);
 router.route('/examiner/:id/insights').get(protect, admin, getExaminerInsights);

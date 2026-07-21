@@ -16,6 +16,8 @@ export interface IUser extends Document {
   status: 'Active' | 'Blocked';
   failedLoginAttempts: number;
   lockedUntil?: Date;
+  lastLogin?: Date;
+  lastLogout?: Date;
   matchPassword(enteredPassword: string): Promise<boolean>;
 }
 
@@ -35,6 +37,8 @@ const userSchema: Schema = new Schema(
     status: { type: String, enum: ['Active', 'Blocked'], default: 'Active' },
     failedLoginAttempts: { type: Number, default: 0 },
     lockedUntil: { type: Date },
+    lastLogin: { type: Date },
+    lastLogout: { type: Date },
   },
   { timestamps: true }
 );

@@ -22,7 +22,6 @@ examRoutes.post('/:id/start', protect, startExam);
 const attemptRoutes = express.Router();
 attemptRoutes.get('/leaderboard', protect, getLeaderboard);
 attemptRoutes.get('/live', protect, getLiveAttempts);
-attemptRoutes.get('/live-debug', getLiveAttempts);
 attemptRoutes.post('/:id/heartbeat', protect, heartbeatSync);
 attemptRoutes.post('/:id/cancel', protect, examiner, cancelAttempt);
 attemptRoutes.post('/:id/submit', protect, submitExam);

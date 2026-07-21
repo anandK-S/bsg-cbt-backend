@@ -466,6 +466,7 @@ export const getLiveAttempts = async (req: AuthRequest, res: Response): Promise<
         await Result.create({
           candidateId: attempt.candidateId,
           examId: attempt.examId,
+          attemptId: attempt._id,
           answers: attempt.answers || [],
           score: 0,
           totalMarks,
@@ -482,20 +483,13 @@ export const getLiveAttempts = async (req: AuthRequest, res: Response): Promise<
 
     let filteredAttempts = validAttempts;
     if (req.user.role === 'Examiner') {
-      console.log(`[DEBUG] Examiner ID: ${req.user._id.toString()}`);
       filteredAttempts = validAttempts.filter(attempt => {
         const exam = attempt.examId as any;
-        if (!exam || !exam.creatorId) {
-          console.log(`[DEBUG] Attempt ${attempt._id} missing exam or creatorId`);
-          return false;
-        }
+        if (!exam || !exam.creatorId) return false;
         const examCreatorId = exam.creatorId._id ? exam.creatorId._id.toString() : exam.creatorId.toString();
-        console.log(`[DEBUG] Attempt ${attempt._id}, Exam ${exam._id}, Creator: ${examCreatorId}, Matches? ${examCreatorId === req.user._id.toString()}`);
         return examCreatorId === req.user._id.toString();
       });
     }
-
-    console.log(`[DEBUG] Returning ${filteredAttempts.length} attempts out of ${validAttempts.length} valid attempts.`);
 
     res.status(200).json(filteredAttempts);
   } catch (error: any) {

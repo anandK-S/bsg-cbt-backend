@@ -3,6 +3,7 @@ import User from '../models/User';
 import generateToken from '../utils/generateToken';
 import Setting from '../models/Setting';
 import jwt from 'jsonwebtoken';
+import AuditLog from '../models/AuditLog';
 // @desc    Auth user & get token
 // @route   POST /api/auth/login
 // @access  Public
@@ -47,6 +48,16 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
       }
 
       const token = generateToken(res, user._id.toString());
+
+      try {
+        await AuditLog.create({
+          userId: user._id,
+          action: 'LOGIN',
+          details: `User logged in from IP: ${req.ip || 'Unknown'}`,
+        });
+      } catch (err) {
+        console.error('AuditLog for login failed:', err);
+      }
 
       res.json({
         _id: user._id,
@@ -159,6 +170,16 @@ export const logoutUser = async (req: Request, res: Response): Promise<void> => 
     try {
       const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string);
       await User.findByIdAndUpdate(decoded.id, { lastLogout: new Date() });
+      
+      try {
+        await AuditLog.create({
+          userId: decoded.id,
+          action: 'LOGOUT',
+          details: `User logged out from IP: ${req.ip || 'Unknown'}`,
+        });
+      } catch (err) {
+        console.error('AuditLog for logout failed:', err);
+      }
     } catch (error) {
       console.error('Error decoding token for logout tracking:', error);
     }

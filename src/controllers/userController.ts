@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import User from '../models/User';
+import AuditLog from '../models/AuditLog';
 import { AuthRequest } from '../middleware/authMiddleware';
 
 // @desc    Get all users
@@ -8,6 +9,21 @@ import { AuthRequest } from '../middleware/authMiddleware';
 export const getUsers = async (req: AuthRequest, res: Response) => {
   const users = await User.find({}).select('-passwordHash');
   res.json(users);
+};
+
+// @desc    Get audit logs
+// @route   GET /api/users/audit-logs
+// @access  Private/Admin
+export const getAuditLogs = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const logs = await AuditLog.find({})
+      .populate('userId', 'name email role')
+      .sort({ timestamp: -1 })
+      .limit(1000); // Limit to latest 1000 for performance
+    res.json(logs);
+  } catch (error: any) {
+    res.status(500).json({ message: error.message || 'Server error' });
+  }
 };
 
 // @desc    Block user

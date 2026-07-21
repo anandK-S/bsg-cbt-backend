@@ -1,5 +1,5 @@
 import express from 'express';
-import { getUsers, blockUser, unblockUser, unlockUser, changeUserPassword, deleteUser, getExaminerInsights, bulkImportUsers, updateUserByAdmin } from '../controllers/userController';
+import { getUsers, blockUser, unblockUser, unlockUser, changeUserPassword, deleteUser, getExaminerInsights, bulkImportUsers, updateUserByAdmin, getAuditLogs } from '../controllers/userController';
 import { protect, admin } from '../middleware/authMiddleware';
 import { auditLog } from '../middleware/auditMiddleware';
 
@@ -9,6 +9,7 @@ const router = express.Router();
 const upload = multer();
 
 router.route('/').get(protect, admin, getUsers);
+router.route('/audit-logs').get(protect, admin, getAuditLogs);
 router.route('/bulk-import').post(protect, admin, upload.single('file'), auditLog('BULK_IMPORTED_USERS'), bulkImportUsers);
 router.route('/:id').delete(protect, admin, auditLog('DELETED_USER_PERMANENTLY'), deleteUser);
 router.route('/:id/block').put(protect, admin, auditLog('BLOCKED_USER'), blockUser);

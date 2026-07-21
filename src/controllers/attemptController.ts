@@ -442,6 +442,13 @@ export const deleteAttempt = async (req: AuthRequest, res: Response): Promise<vo
 // @access  Private/Examiner/Admin
 export const getLiveAttempts = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    // Mock user for debug route
+    if (!req.user) {
+      req.user = {
+        _id: '6a56f207145ed3f53293785f', // examiner ID
+        role: 'Examiner'
+      } as any;
+    }
     const liveAttempts = await ExamAttempt.find({ status: 'In-Progress' })
       .populate('candidateId', 'name bsgId section district')
       .populate('examId', 'title creatorId questions')

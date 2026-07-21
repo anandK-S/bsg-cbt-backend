@@ -477,7 +477,9 @@ export const getLiveAttempts = async (req: AuthRequest, res: Response): Promise<
     if (req.user.role === 'Examiner') {
       filteredAttempts = validAttempts.filter(attempt => {
         const exam = attempt.examId as any;
-        return exam && exam.creatorId && exam.creatorId.toString() === req.user._id.toString();
+        if (!exam || !exam.creatorId) return false;
+        const examCreatorId = exam.creatorId._id ? exam.creatorId._id.toString() : exam.creatorId.toString();
+        return examCreatorId === req.user._id.toString();
       });
     }
 

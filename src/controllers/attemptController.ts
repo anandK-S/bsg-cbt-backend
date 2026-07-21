@@ -597,6 +597,7 @@ export const cancelAttempt = async (req: AuthRequest, res: Response): Promise<vo
   const result = await Result.create({
     candidateId: attempt.candidateId,
     examId: attempt.examId,
+    attemptId: attempt._id,
     answers: attempt.answers || [],
     score: 0,
     totalMarks: exam.questions?.reduce((acc: number, q: any) => acc + (q.marks || 1), 0) || 0,

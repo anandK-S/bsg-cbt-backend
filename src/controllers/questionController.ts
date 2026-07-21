@@ -17,7 +17,7 @@ import path from 'path';
 // @access  Private/Examiner/Admin
 export const addQuestion = async (req: AuthRequest, res: Response): Promise<void> => {
   const { examId } = req.params;
-  let { text, options, correctOptionIndex, category, section, translations, marks, type, acceptableAnswers } = req.body;
+  let { text, options, correctOptionIndex, category, section, translations, marks, type, acceptableAnswers, textHindi, optionsHindi } = req.body;
   let mediaUrl = req.body.mediaUrl;
 
   const exam = await Exam.findById(examId);
@@ -61,6 +61,8 @@ export const addQuestion = async (req: AuthRequest, res: Response): Promise<void
     translations,
     type,
     mediaUrl,
+    textHindi,
+    optionsHindi: optionsHindi ? (typeof optionsHindi === 'string' ? JSON.parse(optionsHindi) : optionsHindi) : undefined,
   });
 
   const createdQuestion = await question.save();

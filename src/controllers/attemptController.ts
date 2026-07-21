@@ -260,10 +260,13 @@ export const getDetailedResult = async (req: AuthRequest, res: Response): Promis
     return {
       _id: qObj._id,
       text: qObj.text,
+      textHindi: qObj.textHindi,
       options: qObj.options,
+      optionsHindi: qObj.optionsHindi,
       correctOptionIndex: qObj.correctOptionIndex,
       marks: q.marks,
       candidateAnswerIndex: candidateAnswer?.selectedOptionIndex ?? null,
+      viewedLanguage: candidateAnswer?.viewedLanguage || 'en',
       isCorrect: candidateAnswer?.selectedOptionIndex === qObj.correctOptionIndex
     };
   });

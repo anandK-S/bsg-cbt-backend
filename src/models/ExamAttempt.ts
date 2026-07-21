@@ -10,6 +10,7 @@ export interface IExamAttempt extends Document {
     questionId: mongoose.Types.ObjectId;
     selectedOptionIndex?: number;
     status: 'NotVisited' | 'Visited' | 'Answered' | 'MarkedForReview' | 'AnsweredAndMarkedForReview' | 'Unanswered';
+    viewedLanguage?: 'en' | 'hi';
   }[];
   timeRemaining: number;
   warnings: number;
@@ -40,6 +41,7 @@ const examAttemptSchema: Schema = new Schema(
           enum: ['NotVisited', 'Visited', 'Answered', 'MarkedForReview', 'AnsweredAndMarkedForReview', 'Unanswered'], 
           default: 'NotVisited' 
         },
+        viewedLanguage: { type: String, enum: ['en', 'hi'], default: 'en' },
       },
     ],
     timeRemaining: { type: Number, required: true },

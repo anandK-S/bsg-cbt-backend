@@ -105,7 +105,7 @@ export const heartbeatSync = async (req: AuthRequest, res: Response): Promise<vo
   
   if (warnings !== undefined) {
     attempt.warnings = warnings;
-    if (attempt.warnings >= 3) {
+    if (attempt.warnings >= 1) {
       attempt.status = 'Blocked';
     }
   }

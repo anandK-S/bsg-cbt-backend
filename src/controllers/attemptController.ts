@@ -38,6 +38,14 @@ export const startExam = async (req: AuthRequest, res: Response): Promise<void> 
     return;
   }
 
+  // Check testKey if present
+  if (exam.testKey && exam.testKey.trim() !== '') {
+    if (req.body.testKey !== exam.testKey) {
+      res.status(401).json({ message: 'Invalid or missing test password.' });
+      return;
+    }
+  }
+
   // Check multiple attempts configuration
   if (!exam.allowMultipleAttempts) {
     const existingCompleted = await ExamAttempt.findOne({

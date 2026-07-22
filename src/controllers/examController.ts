@@ -80,7 +80,7 @@ export const getAvailableExams = async (req: AuthRequest, res: Response) => {
 // @route   POST /api/exams
 // @access  Private/Examiner/Admin
 export const createExam = async (req: AuthRequest, res: Response) => {
-  const { title, description, category, durationMinutes, durationSeconds, durationUnit, passingMarks, scheduledStartDate, scheduledEndDate, allowMultipleAttempts, releaseResultsInstantly, issueCertificate } = req.body;
+  const { title, description, category, durationMinutes, durationSeconds, durationUnit, passingMarks, scheduledStartDate, scheduledEndDate, allowMultipleAttempts, releaseResultsInstantly, issueCertificate, testKey } = req.body;
 
   const exam = new Exam({
     title,
@@ -92,9 +92,10 @@ export const createExam = async (req: AuthRequest, res: Response) => {
     passingMarks: passingMarks || 50,
     scheduledStartDate,
     scheduledEndDate,
-    allowMultipleAttempts,
-    releaseResultsInstantly: releaseResultsInstantly !== undefined ? releaseResultsInstantly : true,
-    issueCertificate: issueCertificate !== undefined ? issueCertificate : true,
+    allowMultipleAttempts: allowMultipleAttempts || false,
+    releaseResultsInstantly: releaseResultsInstantly !== undefined ? releaseResultsInstantly : false,
+    issueCertificate: issueCertificate !== undefined ? issueCertificate : false,
+    testKey,
     creatorId: req.user._id,
   });
 
@@ -109,7 +110,15 @@ export const getExamById = async (req: AuthRequest, res: Response): Promise<void
   const exam = await Exam.findById(req.params.id).populate('questions.questionId');
 
   if (exam) {
-    res.json(exam);
+    const examObj = exam.toObject();
+    const hasTestKey = !!examObj.testKey;
+    
+    // Hide testKey if the user is a Candidate
+    if (req.user.role === 'Candidate') {
+      delete examObj.testKey;
+    }
+
+    res.json({ ...examObj, hasTestKey });
   } else {
     res.status(404).json({ message: 'Exam not found' });
   }
@@ -150,7 +159,7 @@ export const updateExamStatus = async (req: AuthRequest, res: Response): Promise
 // @access  Private/Examiner/Admin
 export const updateExam = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { title, description, category, durationMinutes, durationSeconds, durationUnit, passingMarks, scheduledStartDate, scheduledEndDate, allowMultipleAttempts, releaseResultsInstantly, issueCertificate } = req.body;
+  const { title, description, category, durationMinutes, durationSeconds, durationUnit, passingMarks, scheduledStartDate, scheduledEndDate, allowMultipleAttempts, releaseResultsInstantly, issueCertificate, testKey } = req.body;
 
   const exam = await Exam.findById(id);
 
@@ -177,6 +186,7 @@ export const updateExam = async (req: AuthRequest, res: Response): Promise<void>
   if (allowMultipleAttempts !== undefined) exam.allowMultipleAttempts = allowMultipleAttempts;
   if (releaseResultsInstantly !== undefined) exam.releaseResultsInstantly = releaseResultsInstantly;
   if (issueCertificate !== undefined) exam.issueCertificate = issueCertificate;
+  if (testKey !== undefined) exam.testKey = testKey;
 
   await exam.save();
   res.json({ message: 'Exam updated', exam });

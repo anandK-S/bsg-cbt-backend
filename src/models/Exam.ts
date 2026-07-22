@@ -17,6 +17,7 @@ export interface IExam extends Document {
   issueCertificate: boolean;
   allowMultipleAttempts: boolean;
   releaseResultsInstantly: boolean;
+  testKey?: string;
   questions: { questionId: mongoose.Types.ObjectId; marks: number }[];
   createdAt?: Date;
   updatedAt?: Date;
@@ -38,8 +39,9 @@ const examSchema: Schema = new Schema(
     endTime: { type: Date },
     status: { type: String, enum: ['Draft', 'Published', 'Archived'], default: 'Draft' },
     allowMultipleAttempts: { type: Boolean, default: false },
-    issueCertificate: { type: Boolean, default: true },
-    releaseResultsInstantly: { type: Boolean, default: true },
+    issueCertificate: { type: Boolean, default: false },
+    releaseResultsInstantly: { type: Boolean, default: false },
+    testKey: { type: String },
     questions: [
       {
         questionId: { type: Schema.Types.ObjectId, ref: 'Question' },

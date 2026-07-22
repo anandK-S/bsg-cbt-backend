@@ -125,6 +125,8 @@ CRITICAL INSTRUCTIONS:
 - "optionsHindi": An array of 4 string options in strictly HINDI. (Translate to Hindi if necessary).
 - "correctOptionIndex": The 0-based index of the correct option (must match for both languages).
 - "category": A guessed category based on the question (e.g. "Scouting", "First Aid", "Knots").
+
+IMPORTANT HINDI ENCODING RULE: If the original Hindi text looks like gibberish or uses legacy font encoding (e.g., 'ĤगǓत' instead of 'प्रगति', or 'धम[' instead of 'धर्म', or 'मानव शरȣर' instead of 'मानव शरीर'), DO NOT return the broken text! Instead, completely ignore the broken Hindi and accurately translate the English question back to standard Unicode Hindi.
 `;
 
     if (mimeType.startsWith('image/')) {
@@ -355,6 +357,7 @@ export const editQuestion = async (req: AuthRequest, res: Response): Promise<voi
   if (typeof options === 'string') options = JSON.parse(options);
   if (typeof acceptableAnswers === 'string') acceptableAnswers = JSON.parse(acceptableAnswers);
   if (typeof translations === 'string') translations = JSON.parse(translations);
+  if (typeof req.body.optionsHindi === 'string') req.body.optionsHindi = JSON.parse(req.body.optionsHindi);
 
   question.text = text || question.text;
   question.options = options || question.options;

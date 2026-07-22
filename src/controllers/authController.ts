@@ -107,9 +107,8 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    const passwordRegex = /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{6,}$/;
-    if (!passwordRegex.test(password)) {
-      res.status(400).json({ message: 'Password must be at least 6 characters and contain a letter, a number, and a special character.' });
+    if (password.length < 6) {
+      res.status(400).json({ message: 'Password must be at least 6 characters.' });
       return;
     }
 
@@ -136,11 +135,11 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
       email,
       passwordHash: password, // The pre-save hook will hash it
       role: assignedRole,
-      bsgId: assignedRole === 'Candidate' ? bsgId : undefined,
-      section: assignedRole === 'Candidate' ? section : undefined,
-      district: assignedRole === 'Candidate' ? district : undefined,
-      unitNumber: assignedRole === 'Candidate' ? unitNumber : undefined,
-      unitName: assignedRole === 'Candidate' ? unitName : undefined,
+      bsgId: bsgId || undefined,
+      section: section || undefined,
+      district: district || undefined,
+      unitNumber: unitNumber || undefined,
+      unitName: unitName || undefined,
     });
 
     if (user) {

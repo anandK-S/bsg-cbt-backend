@@ -1,6 +1,7 @@
 import express from 'express';
 import { getExams, createExam, getExamById, updateExamStatus, getAvailableExams, updateExam, deleteExam } from '../controllers/examController';
 import { addQuestion, importQuestions, deleteQuestion, editQuestion, autoTranslate, deleteAllQuestions } from '../controllers/questionController';
+import { auditExam, applyAuditFixes } from '../controllers/anandAiController';
 import { startExam } from '../controllers/attemptController';
 import { protect, examiner, admin } from '../middleware/authMiddleware';
 import multer from 'multer';
@@ -22,6 +23,9 @@ router.route('/:id')
 
 router.put('/:id/status', protect, examiner, updateExamStatus);
 router.post('/:id/start', protect, startExam);
+
+router.post('/:examId/anand-ai/audit', protect, examiner, auditExam);
+router.post('/:examId/anand-ai/apply', protect, examiner, applyAuditFixes);
 
 router.post('/translate', protect, examiner, autoTranslate);
 router.post('/:examId/questions', protect, examiner, upload.single('media'), addQuestion);

@@ -145,7 +145,7 @@ CRITICAL INSTRUCTIONS:
         return;
       }
 
-      contentsPayload = `${basePrompt}\n\nText to parse:\n${fileContent.substring(0, 5000)}`;
+      contentsPayload = `${basePrompt}\n\nText to parse:\n${fileContent}`;
     }
 
     if (!process.env.GEMINI_API_KEY) {

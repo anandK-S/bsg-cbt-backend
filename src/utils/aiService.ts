@@ -35,7 +35,7 @@ export const generateAIContent = async (params: AIParams): Promise<string> => {
       }
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-1.5-flash',
         contents: contentsPayload,
       });
 
@@ -61,7 +61,7 @@ export const generateAIContent = async (params: AIParams): Promise<string> => {
       }
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-1.5-flash',
         contents: contentsPayload,
       });
 
@@ -88,7 +88,7 @@ export const generateAIContent = async (params: AIParams): Promise<string> => {
       messages.push({ role: 'user', content: userPrompt });
 
       const response = await openai.chat.completions.create({
-        model: 'llama3-70b-8192',
+        model: 'llama-3.3-70b-versatile',
         messages,
         response_format: jsonMode ? { type: 'json_object' } : undefined,
       });

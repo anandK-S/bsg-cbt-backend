@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import Question from '../models/Question';
 import Exam from '../models/Exam';
 import { AuthRequest } from '../middleware/authMiddleware';
-import { GoogleGenAI } from '@google/genai';
+import { generateAIContent } from '../utils/aiService';
 
 const pdfParse = require('pdf-parse');
 import mammoth from 'mammoth';
@@ -145,11 +145,11 @@ CRITICAL INSTRUCTIONS:
         return;
       }
 
-      contentsPayload = `${basePrompt}\n\nText to parse:\n${fileContent}`;
+      contentsPayload = `${fileContent}`;
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-      // Return a mock parsed question instead of throwing an error
+    if (!process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY_2 && !process.env.OPENAI_API_KEY && !process.env.GROQ_API_KEY) {
+      // Return a mock parsed question instead of throwing an error if NO keys exist
       const mockQuestions = [
         {
           text: "Sample AI Extracted Question from Document?",
@@ -177,36 +177,34 @@ CRITICAL INSTRUCTIONS:
         });
       }
       await exam.save();
-      res.status(201).json({ message: 'Questions imported successfully (Mock data used since API key is missing)', count: createdQuestions.length });
+      res.status(201).json({ message: 'Questions imported successfully (Mock data used since no AI keys are missing)', count: createdQuestions.length });
       return;
     }
 
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    
-    let response;
-    let retries = 3;
-    let delay = 2000;
-    while (retries > 0) {
-      try {
-        response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: contentsPayload,
+    let aiText = '';
+    try {
+      if (mimeType.startsWith('image/')) {
+        aiText = await generateAIContent({
+          systemPrompt: basePrompt,
+          userPrompt: 'Extract questions from this image.',
+          image: {
+            base64: file.buffer.toString('base64'),
+            mimeType: mimeType
+          },
+          jsonMode: true
         });
-        break; // Success
-      } catch (err: any) {
-        const isUnavailable = err?.status === 503 || err?.status === 'UNAVAILABLE' || (err?.message && err.message.includes('503'));
-        if (isUnavailable) {
-          retries--;
-          if (retries === 0) throw err;
-          await new Promise(res => setTimeout(res, delay));
-          delay *= 2; // Exponential backoff
-        } else {
-          throw err;
-        }
+      } else {
+        aiText = await generateAIContent({
+          systemPrompt: basePrompt,
+          userPrompt: `Text to parse:\n${fileContent}`,
+          jsonMode: true
+        });
       }
+    } catch (err: any) {
+      console.error('AI Generation Error:', err);
+      res.status(500).json({ message: 'AI failed to process the document: ' + err.message });
+      return;
     }
-
-    const aiText = response?.text;
     
     // Attempt to parse JSON from the response (removing markdown code blocks if any)
     const jsonMatch = aiText?.match(/```(?:json)?([\s\S]*?)```/) || [null, aiText];

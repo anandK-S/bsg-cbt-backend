@@ -4,7 +4,8 @@ import Exam from '../models/Exam';
 import Result from '../models/Result';
 import { AuthRequest } from '../middleware/authMiddleware';
 import Setting from '../models/Setting';
-import { GoogleGenAI } from '@google/genai';
+import mongoose from 'mongoose';
+import { generateAIContent } from '../utils/aiService';
 
 // We initialize inside the function so it doesn't crash on startup if the key is missing
 
@@ -184,20 +185,18 @@ export const submitExam = async (req: AuthRequest, res: Response): Promise<void>
 
   let aiFeedback = "Good job on completing the exam! Review your correct and incorrect answers to improve your score next time.";
   
-  if (process.env.GEMINI_API_KEY) {
+  if (process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY_2 || process.env.OPENAI_API_KEY || process.env.GROQ_API_KEY) {
     try {
       const prompt = `The candidate just completed a multiple-choice exam. They scored ${score} out of ${totalMarks}.
 Analyze their performance and give a brief, encouraging qualitative summary pointing out areas of strength and areas to improve based on the category of questions they got right/wrong.
 Do not provide a generic response; write directly to the candidate as a supportive tutor. Keep it under 3 sentences.`;
 
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
+      const aiText = await generateAIContent({
+        userPrompt: prompt
       });
       
-      if (response.text) {
-        aiFeedback = response.text;
+      if (aiText) {
+        aiFeedback = aiText;
       }
     } catch (error) {
       console.error("AI feedback generation failed:", error);

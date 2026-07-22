@@ -9,6 +9,7 @@ export interface IExam extends Document {
   durationSeconds?: number;
   durationUnit: 'sec' | 'min' | 'hour';
   passingMarks: number;
+  passingCriteriaType: 'percentage' | 'marks';
   scheduledStartDate?: Date;
   scheduledEndDate?: Date;
   startTime?: Date;
@@ -33,6 +34,7 @@ const examSchema: Schema = new Schema(
     durationSeconds: { type: Number },
     durationUnit: { type: String, enum: ['sec', 'min', 'hour'], default: 'min' },
     passingMarks: { type: Number, default: 50 },
+    passingCriteriaType: { type: String, enum: ['percentage', 'marks'], default: 'percentage' },
     scheduledStartDate: { type: Date },
     scheduledEndDate: { type: Date },
     startTime: { type: Date },

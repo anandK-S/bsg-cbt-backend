@@ -80,7 +80,7 @@ export const getAvailableExams = async (req: AuthRequest, res: Response) => {
 // @route   POST /api/exams
 // @access  Private/Examiner/Admin
 export const createExam = async (req: AuthRequest, res: Response) => {
-  const { title, description, category, durationMinutes, durationSeconds, durationUnit, passingMarks, scheduledStartDate, scheduledEndDate, allowMultipleAttempts, releaseResultsInstantly, issueCertificate, testKey } = req.body;
+  const { title, description, category, durationMinutes, durationSeconds, durationUnit, passingMarks, passingCriteriaType, scheduledStartDate, scheduledEndDate, allowMultipleAttempts, releaseResultsInstantly, issueCertificate, testKey } = req.body;
 
   const exam = new Exam({
     title,
@@ -90,6 +90,7 @@ export const createExam = async (req: AuthRequest, res: Response) => {
     durationSeconds: durationSeconds || 0,
     durationUnit: durationUnit || 'min',
     passingMarks: passingMarks || 50,
+    passingCriteriaType: passingCriteriaType || 'percentage',
     scheduledStartDate,
     scheduledEndDate,
     allowMultipleAttempts: allowMultipleAttempts || false,
@@ -159,7 +160,7 @@ export const updateExamStatus = async (req: AuthRequest, res: Response): Promise
 // @access  Private/Examiner/Admin
 export const updateExam = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { title, description, category, durationMinutes, durationSeconds, durationUnit, passingMarks, scheduledStartDate, scheduledEndDate, allowMultipleAttempts, releaseResultsInstantly, issueCertificate, testKey } = req.body;
+  const { title, description, category, durationMinutes, durationSeconds, durationUnit, passingMarks, passingCriteriaType, scheduledStartDate, scheduledEndDate, allowMultipleAttempts, releaseResultsInstantly, issueCertificate, testKey } = req.body;
 
   const exam = await Exam.findById(id);
 
@@ -181,6 +182,7 @@ export const updateExam = async (req: AuthRequest, res: Response): Promise<void>
   if (durationSeconds !== undefined) exam.durationSeconds = durationSeconds;
   if (durationUnit) exam.durationUnit = durationUnit;
   if (passingMarks !== undefined) exam.passingMarks = passingMarks;
+  if (passingCriteriaType !== undefined) exam.passingCriteriaType = passingCriteriaType;
   if (scheduledStartDate !== undefined) exam.scheduledStartDate = scheduledStartDate || null;
   if (scheduledEndDate !== undefined) exam.scheduledEndDate = scheduledEndDate || null;
   if (allowMultipleAttempts !== undefined) exam.allowMultipleAttempts = allowMultipleAttempts;

@@ -49,7 +49,7 @@ export const auditExam = async (req: AuthRequest, res: Response): Promise<void> 
     const systemPrompt = `You are Anand AI, a master exam auditor and assistant. You are reviewing an exam's configuration and its questions to ensure maximum quality.
     
 CRITICAL INSTRUCTIONS:
-1. Review the Exam's 'title', 'description', and 'category'. If they are poorly written, too short, or missing, provide better ones.
+1. Review the Exam's 'title', 'description', and 'category'. ONLY suggest changes if they are completely missing, or extremely poor (e.g., 1 word). If the examiner has already provided a reasonable description or title, DO NOT change it!
 2. Review the Schedule: If 'scheduledStartDate' is within the next 24 hours (or past) but the status is 'Draft', recommend changing status to 'Published'.
 3. Review every single Question:
    - Check if English 'text' or 'options' are missing, grammatically broken, or incomplete.
@@ -59,10 +59,10 @@ CRITICAL INSTRUCTIONS:
 {
   "generalFeedback": "A professional 2-3 sentence summary of what you found and fixed.",
   "examUpdates": {
-    "title": "Improved Title (or original if fine)",
-    "description": "Improved Description (or original if fine)",
-    "category": "Improved Category",
-    "status": "Published" // Only include 'status' if you recommend publishing it due to schedule
+    "title": "Improved Title (OMIT THIS KEY if original is fine)",
+    "description": "Improved Description (OMIT THIS KEY if original is fine)",
+    "category": "Improved Category (OMIT THIS KEY if original is fine)",
+    "status": "Published" // OMIT THIS KEY unless recommending publishing
   },
   "questionUpdates": [
     {

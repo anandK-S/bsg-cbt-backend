@@ -421,18 +421,16 @@ export const autoTranslate = async (req: AuthRequest, res: Response): Promise<vo
     return;
   }
   
-  if (!process.env.GEMINI_API_KEY) {
+  if (!process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY_2 && !process.env.OPENAI_API_KEY && !process.env.GROQ_API_KEY) {
     res.status(200).json({ translatedText: text + ` (Translation API missing)` });
     return;
   }
   
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `Translate the following text to ${targetLanguage}. Only return the translated ${targetLanguage} text without any formatting, quotes, or markdown. Text to translate:\n\n${text}`,
+    const aiText = await generateAIContent({
+      userPrompt: `Translate the following text to ${targetLanguage}. Only return the translated ${targetLanguage} text without any formatting, quotes, or markdown. Text to translate:\n\n${text}`
     });
-    res.status(200).json({ translatedText: response.text?.trim() });
+    res.status(200).json({ translatedText: aiText?.trim() });
   } catch (error: any) {
     console.error('Translation error:', error);
     res.status(500).json({ message: 'Translation failed: ' + (error?.message || error) });

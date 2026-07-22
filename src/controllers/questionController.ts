@@ -190,10 +190,13 @@ CRITICAL INSTRUCTIONS:
       return;
     }
 
-    let aiText = '';
+    let allParsedQuestions: any[] = [];
+    let hasError = false;
+    let errorMsg = '';
+
     try {
       if (mimeType.startsWith('image/')) {
-        aiText = await generateAIContent({
+        const aiText = await generateAIContent({
           systemPrompt: basePrompt,
           userPrompt: 'Extract questions from this image.',
           image: {
@@ -202,12 +205,52 @@ CRITICAL INSTRUCTIONS:
           },
           jsonMode: true
         });
+        
+        const jsonMatch = aiText?.match(/```(?:json)?([\s\S]*?)```/) || [null, aiText];
+        const jsonString = jsonMatch[1]?.trim() || '[]';
+        const parsed = JSON.parse(jsonString);
+        const questionArray = parsed.questions || parsed;
+        if (Array.isArray(questionArray)) {
+          allParsedQuestions.push(...questionArray);
+        }
       } else {
-        aiText = await generateAIContent({
-          systemPrompt: basePrompt,
-          userPrompt: `Text to parse:\n${fileContent}`,
-          jsonMode: true
-        });
+        // Chunking for large text files (PDF, DOCX, TXT)
+        let chunks = [];
+        let currentChunk = '';
+        const MAX_LENGTH = 3500; // Optimal chunk size for LLM output limits
+        
+        const lines = fileContent.split('\n');
+        for (const line of lines) {
+          if (currentChunk.length + line.length > MAX_LENGTH) {
+            chunks.push(currentChunk);
+            currentChunk = line + '\n';
+          } else {
+            currentChunk += line + '\n';
+          }
+        }
+        if (currentChunk.trim()) chunks.push(currentChunk);
+
+        // Process chunks sequentially
+        for (const chunk of chunks) {
+          if (!chunk.trim()) continue;
+          const aiText = await generateAIContent({
+            systemPrompt: basePrompt,
+            userPrompt: `Text to parse:\n${chunk}`,
+            jsonMode: true
+          });
+          
+          const jsonMatch = aiText?.match(/```(?:json)?([\s\S]*?)```/) || [null, aiText];
+          const jsonString = jsonMatch[1]?.trim() || '[]';
+          try {
+            const parsed = JSON.parse(jsonString);
+            const questionArray = parsed.questions || parsed;
+            if (Array.isArray(questionArray)) {
+              allParsedQuestions.push(...questionArray);
+            }
+          } catch(e) {
+            console.error('Failed to parse chunk JSON, skipping chunk.');
+          }
+        }
       }
     } catch (err: any) {
       console.error('AI Generation Error:', err);
@@ -215,35 +258,15 @@ CRITICAL INSTRUCTIONS:
       return;
     }
     
-    // Attempt to parse JSON from the response (removing markdown code blocks if any)
-    const jsonMatch = aiText?.match(/```(?:json)?([\s\S]*?)```/) || [null, aiText];
-    const jsonString = jsonMatch[1]?.trim() || '[]';
-    
-    let parsedQuestions: any;
-    try {
-      parsedQuestions = JSON.parse(jsonString);
-    } catch (parseError) {
-      console.error('Error parsing JSON from AI response:', aiText);
-      res.status(500).json({ message: 'AI returned invalid formatting. Please try again.' });
-      return;
-    }
-
-    if (parsedQuestions && parsedQuestions.error) {
-      res.status(400).json({ message: 'AI could not read file: ' + parsedQuestions.error });
-      return;
-    }
-
-    const questionArray = parsedQuestions.questions || parsedQuestions;
-
-    if (!Array.isArray(questionArray)) {
-      res.status(500).json({ message: 'AI did not return a valid list of questions.' });
+    if (allParsedQuestions.length === 0) {
+      res.status(500).json({ message: 'AI did not return a valid list of questions. The document might be unreadable.' });
       return;
     }
 
     const createdQuestions = [];
     let duplicatesSkipped = 0;
 
-    for (const q of questionArray) {
+    for (const q of allParsedQuestions) {
       // Duplicate Protection Check
       const existing = await Question.findOne({ examId, text: q.text });
       if (existing) {

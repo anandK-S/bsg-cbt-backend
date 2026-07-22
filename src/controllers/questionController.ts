@@ -50,6 +50,13 @@ export const addQuestion = async (req: AuthRequest, res: Response): Promise<void
   if (typeof acceptableAnswers === 'string') acceptableAnswers = JSON.parse(acceptableAnswers);
   if (typeof translations === 'string') translations = JSON.parse(translations);
 
+  // Duplicate Protection Check
+  const existing = await Question.findOne({ examId, text });
+  if (existing) {
+    res.status(400).json({ message: 'A question with this exact text already exists in this exam.' });
+    return;
+  }
+
   const question = new Question({
     examId,
     text,
@@ -107,11 +114,11 @@ export const importQuestions = async (req: AuthRequest, res: Response): Promise<
     const originalName = file.originalname.toLowerCase();
 
     let contentsPayload: any = [];
-    const basePrompt = `Extract the multiple choice questions from the following text/image and format them as a JSON array of objects.
+    const basePrompt = `Extract the multiple choice questions from the following text/image and format them as a JSON object containing a "questions" array.
 CRITICAL INSTRUCTIONS: 
 1. If the provided document contains the correct answers, ensure the "correctOptionIndex" strictly matches the answer key.
 2. If you absolutely cannot find any questions or readable text in the file, return a JSON object with a single key "error" explaining why.
-3. Otherwise, return a JSON array of objects, where each object has:
+3. Otherwise, return a JSON object with a single key "questions" containing an array of objects, where each object has:
 - "text": The question text in strictly ENGLISH. (Translate it to English if the original document is in another language).
 - "options": An array of 4 string options in strictly ENGLISH. (Translate to English if necessary).
 - "textHindi": The exact HINDI translation of the question text. (Translate to Hindi if the original document is in another language).
@@ -226,14 +233,24 @@ CRITICAL INSTRUCTIONS:
       return;
     }
 
-    if (!Array.isArray(parsedQuestions)) {
-      res.status(500).json({ message: 'AI did not return a list of questions.' });
+    const questionArray = parsedQuestions.questions || parsedQuestions;
+
+    if (!Array.isArray(questionArray)) {
+      res.status(500).json({ message: 'AI did not return a valid list of questions.' });
       return;
     }
 
     const createdQuestions = [];
+    let duplicatesSkipped = 0;
 
-    for (const q of parsedQuestions) {
+    for (const q of questionArray) {
+      // Duplicate Protection Check
+      const existing = await Question.findOne({ examId, text: q.text });
+      if (existing) {
+        duplicatesSkipped++;
+        continue;
+      }
+
       const question = new Question({
         examId,
         text: q.text,
@@ -253,8 +270,17 @@ CRITICAL INSTRUCTIONS:
     }
 
     await exam.save();
+    
+    let msg = `Successfully imported ${createdQuestions.length} questions.`;
+    if (duplicatesSkipped > 0) {
+      msg += ` Skipped ${duplicatesSkipped} duplicates.`;
+    }
 
-    res.status(201).json({ message: 'Questions imported successfully', count: createdQuestions.length });
+    res.status(201).json({ 
+      message: msg, 
+      count: createdQuestions.length,
+      duplicatesSkipped
+    });
   } catch (error: any) {
     console.error('Error importing questions:', error);
     res.status(500).json({ message: 'Error parsing questions with AI: ' + (error?.message || error) });
@@ -372,6 +398,42 @@ export const editQuestion = async (req: AuthRequest, res: Response): Promise<voi
   }
 
   res.status(200).json(updatedQuestion);
+};
+
+// @desc    Delete all questions for an exam
+// @route   DELETE /api/exams/:examId/questions/all
+// @access  Private/Examiner/Admin
+export const deleteAllQuestions = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { examId } = req.params;
+
+  const exam = await Exam.findById(examId);
+
+  if (!exam) {
+    res.status(404).json({ message: 'Exam not found' });
+    return;
+  }
+
+  // Authorization check
+  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
+    res.status(403).json({ message: 'Not authorized' });
+    return;
+  }
+  
+  // Security Fix: Prevent deletion if there are active candidates
+  const activeAttempts = await ExamAttempt.findOne({ examId: examId, status: 'In-Progress' });
+  if (activeAttempts) {
+    res.status(400).json({ message: 'Cannot delete questions while candidates are currently taking the exam.' });
+    return;
+  }
+
+  // Delete all questions associated with this exam from Question collection
+  await Question.deleteMany({ examId: examId });
+
+  // Clear questions array in Exam document
+  exam.questions = [];
+  await exam.save();
+
+  res.status(200).json({ message: 'All questions deleted successfully' });
 };
 
 // @desc    Delete a question

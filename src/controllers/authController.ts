@@ -92,7 +92,7 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
 // @access  Public
 export const registerUser = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, email, password, bsgId, section, adminCode, district, unitNumber, unitName } = req.body;
+    const { name, email, password, bsgId, section, adminCode, examinerCode, district, unitNumber, unitName } = req.body;
 
     const userExists = await User.findOne({ email });
 
@@ -116,6 +116,11 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
     let assignedRole: 'Candidate' | 'Examiner' | 'Admin' = 'Candidate';
     if (adminCode && process.env.ADMIN_REGISTRATION_CODE && adminCode === process.env.ADMIN_REGISTRATION_CODE) {
       assignedRole = 'Admin';
+    } else if (examinerCode && process.env.EXAMINER_SECRET_CODE && examinerCode === process.env.EXAMINER_SECRET_CODE) {
+      assignedRole = 'Examiner';
+    } else if (examinerCode) {
+      res.status(400).json({ message: 'Invalid Examiner Secret Code' });
+      return;
     }
 
     const settings = await Setting.findOne();

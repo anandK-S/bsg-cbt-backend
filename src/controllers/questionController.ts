@@ -110,12 +110,14 @@ export const importQuestions = async (req: AuthRequest, res: Response): Promise<
     const basePrompt = `Extract the multiple choice questions from the following text/image and format them as a JSON array of objects.
 CRITICAL INSTRUCTIONS: 
 1. If the provided document contains the correct answers, ensure the "correctOptionIndex" strictly matches the answer key.
-2. If you absolutely cannot find any questions or readable text in the file, return a JSON object with a single key "error" explaining why (e.g. {"error": "The image is too blurry to read any text."}).
+2. If you absolutely cannot find any questions or readable text in the file, return a JSON object with a single key "error" explaining why.
 3. Otherwise, return a JSON array of objects, where each object has:
-- "text": The question text
-- "options": An array of 4 string options
-- "correctOptionIndex": The 0-based index of the correct option
-- "category": A guessed category based on the question (e.g. "Scouting", "First Aid", "Knots")
+- "text": The question text in strictly ENGLISH. (Translate it to English if the original document is in another language).
+- "options": An array of 4 string options in strictly ENGLISH. (Translate to English if necessary).
+- "textHindi": The exact HINDI translation of the question text. (Translate to Hindi if the original document is in another language).
+- "optionsHindi": An array of 4 string options in strictly HINDI. (Translate to Hindi if necessary).
+- "correctOptionIndex": The 0-based index of the correct option (must match for both languages).
+- "category": A guessed category based on the question (e.g. "Scouting", "First Aid", "Knots").
 `;
 
     if (mimeType.startsWith('image/')) {
@@ -236,6 +238,8 @@ CRITICAL INSTRUCTIONS:
         examId,
         text: q.text,
         options: q.options,
+        textHindi: q.textHindi,
+        optionsHindi: q.optionsHindi,
         correctOptionIndex: q.correctOptionIndex,
         category: q.category,
       });

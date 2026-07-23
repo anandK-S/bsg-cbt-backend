@@ -10,6 +10,7 @@ import examRoutes from './routes/examRoutes';
 import { attemptRoutes } from './routes/attemptRoutes';
 import settingRoutes from './routes/settingRoutes';
 import { startScheduler } from './utils/scheduler';
+import { camelCaseResponse } from './middleware/camelCaseResponse';
 import path from 'path';
 import { supabase } from './config/supabase';
 
@@ -73,6 +74,7 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+app.use(camelCaseResponse);
 
 // Routes
 app.use('/api/auth', authRoutes);

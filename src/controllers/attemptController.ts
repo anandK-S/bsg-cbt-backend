@@ -73,7 +73,16 @@ export const startExam = async (req: AuthRequest, res: Response): Promise<void> 
   });
 
   res.status(200).json({ 
-    attempt: { ...attempt, _id: attempt.id, timeRemaining: attempt.time_remaining }, 
+    attempt: { 
+      ...attempt, 
+      _id: attempt.id, 
+      timeRemaining: attempt.time_remaining,
+      timeSpentAnalytics: attempt.time_spent_analytics,
+      startTime: attempt.start_time,
+      endTime: attempt.end_time,
+      examId: attempt.exam_id,
+      candidateId: attempt.candidate_id
+    }, 
     questions: sanitizedQuestions, 
     examTitle: exam.title, 
     durationMinutes: exam.duration_minutes 

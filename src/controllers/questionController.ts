@@ -71,7 +71,16 @@ export const addQuestion = async (req: AuthRequest, res: Response): Promise<void
     res.status(500).json({ message: qError.message }); return;
   }
 
-  res.status(201).json({ ...createdQuestion, _id: createdQuestion.id }); return;
+  res.status(201).json({ 
+    ...createdQuestion, 
+    _id: createdQuestion.id,
+    correctOptionIndex: createdQuestion.correct_option_index,
+    acceptableAnswers: createdQuestion.acceptable_answers,
+    textHindi: createdQuestion.text_hindi,
+    optionsHindi: createdQuestion.options_hindi,
+    mediaUrl: createdQuestion.media_url,
+    examId: createdQuestion.exam_id
+  }); return;
 };
 
 // @desc    Import questions via AI (PDF/Docx text content extraction)
@@ -362,7 +371,16 @@ export const editQuestion = async (req: AuthRequest, res: Response): Promise<voi
     }
   }
 
-  res.status(200).json({ ...updatedQuestion, _id: updatedQuestion.id }); return;
+  res.status(200).json({ 
+    ...updatedQuestion, 
+    _id: updatedQuestion.id,
+    correctOptionIndex: updatedQuestion.correct_option_index,
+    acceptableAnswers: updatedQuestion.acceptable_answers,
+    textHindi: updatedQuestion.text_hindi,
+    optionsHindi: updatedQuestion.options_hindi,
+    mediaUrl: updatedQuestion.media_url,
+    examId: updatedQuestion.exam_id
+  }); return;
 };
 
 // @desc    Delete all questions for an exam

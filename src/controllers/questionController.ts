@@ -20,13 +20,11 @@ export const addQuestion = async (req: AuthRequest, res: Response): Promise<void
 
   if (examError || !exam) {
     res.status(404).json({ message: 'Exam not found' }); return;
-    return;
   }
 
   // Authorization check (Admin or creator)
   if (req.user.role !== 'Admin' && exam.creator_id !== req.user._id) {
     res.status(403).json({ message: 'Not authorized to add questions to this exam' }); return;
-    return;
   }
 
   // Handle local file upload
@@ -51,7 +49,6 @@ export const addQuestion = async (req: AuthRequest, res: Response): Promise<void
   const { data: existing } = await supabase.from('questions').select('id').eq('exam_id', examId).eq('text', text).maybeSingle();
   if (existing) {
     res.status(400).json({ message: 'A question with this exact text already exists in this exam.' }); return;
-    return;
   }
 
   const { data: createdQuestion, error: qError } = await supabase.from('questions').insert({
@@ -72,7 +69,6 @@ export const addQuestion = async (req: AuthRequest, res: Response): Promise<void
 
   if (qError) {
     res.status(500).json({ message: qError.message }); return;
-    return;
   }
 
   res.status(201).json({ ...createdQuestion, _id: createdQuestion.id }); return;
@@ -87,17 +83,14 @@ export const importQuestions = async (req: AuthRequest, res: Response): Promise<
 
   if (!file) {
     res.status(400).json({ message: 'No file uploaded' }); return;
-    return;
   }
 
   const { data: exam } = await supabase.from('exams').select('creator_id').eq('id', examId).single();
   if (!exam) {
     res.status(404).json({ message: 'Exam not found' }); return;
-    return;
   }
   if (req.user.role !== 'Admin' && exam.creator_id !== req.user._id) {
     res.status(403).json({ message: 'Not authorized to add questions to this exam' }); return;
-    return;
   }
 
   try {
@@ -144,7 +137,6 @@ IMPORTANT HINDI ENCODING RULE: If the original Hindi text looks like gibberish o
       
       if (!fileContent || fileContent.trim() === '') {
         res.status(400).json({ message: 'Could not extract text from the file.' }); return;
-        return;
       }
       contentsPayload = `${fileContent}`;
     }
@@ -172,7 +164,6 @@ IMPORTANT HINDI ENCODING RULE: If the original Hindi text looks like gibberish o
         createdQuestions.push(savedQ);
       }
       res.status(201).json({ message: 'Questions imported successfully (Mock data used since no AI keys are missing)', count: createdQuestions.length }); return;
-      return;
     }
 
     let allParsedQuestions: any[] = [];
@@ -236,12 +227,10 @@ IMPORTANT HINDI ENCODING RULE: If the original Hindi text looks like gibberish o
     } catch (err: any) {
       console.error('AI Generation Error:', err);
       res.status(500).json({ message: 'AI failed to process the document: ' + err.message }); return;
-      return;
     }
     
     if (allParsedQuestions.length === 0) {
       res.status(500).json({ message: 'AI did not return a valid list of questions. The document might be unreadable.' }); return;
-      return;
     }
 
     const createdQuestions = [];
@@ -295,18 +284,15 @@ export const editQuestion = async (req: AuthRequest, res: Response): Promise<voi
   const { data: exam } = await supabase.from('exams').select('creator_id').eq('id', examId).single();
   if (!exam) {
     res.status(404).json({ message: 'Exam not found' }); return;
-    return;
   }
 
   if (req.user.role !== 'Admin' && exam.creator_id !== req.user._id) {
     res.status(403).json({ message: 'Not authorized' }); return;
-    return;
   }
 
   const { data: question } = await supabase.from('questions').select('*').eq('id', questionId).single();
   if (!question) {
     res.status(404).json({ message: 'Question not found' }); return;
-    return;
   }
 
   if (req.file) {
@@ -349,7 +335,6 @@ export const editQuestion = async (req: AuthRequest, res: Response): Promise<voi
   const { data: updatedQuestion, error } = await supabase.from('questions').update(updates).eq('id', questionId).select().single();
   if (error) {
      res.status(500).json({ message: error.message }); return;
-     return;
   }
   
   if (triggeredReevaluation) {
@@ -389,18 +374,15 @@ export const deleteAllQuestions = async (req: AuthRequest, res: Response): Promi
   const { data: exam } = await supabase.from('exams').select('creator_id').eq('id', examId).single();
   if (!exam) {
     res.status(404).json({ message: 'Exam not found' }); return;
-    return;
   }
 
   if (req.user.role !== 'Admin' && exam.creator_id !== req.user._id) {
     res.status(403).json({ message: 'Not authorized' }); return;
-    return;
   }
   
   const { data: activeAttempts } = await supabase.from('exam_attempts').select('id').eq('exam_id', examId).eq('status', 'In-Progress').limit(1);
   if (activeAttempts && activeAttempts.length > 0) {
     res.status(400).json({ message: 'Cannot delete questions while candidates are currently taking the exam.' }); return;
-    return;
   }
 
   await supabase.from('questions').delete().eq('exam_id', examId);
@@ -417,18 +399,15 @@ export const deleteQuestion = async (req: AuthRequest, res: Response): Promise<v
   const { data: exam } = await supabase.from('exams').select('creator_id').eq('id', examId).single();
   if (!exam) {
     res.status(404).json({ message: 'Exam not found' }); return;
-    return;
   }
 
   if (req.user.role !== 'Admin' && exam.creator_id !== req.user._id) {
     res.status(403).json({ message: 'Not authorized' }); return;
-    return;
   }
   
   const { data: activeAttempts } = await supabase.from('exam_attempts').select('id').eq('exam_id', examId).eq('status', 'In-Progress').limit(1);
   if (activeAttempts && activeAttempts.length > 0) {
     res.status(400).json({ message: 'Cannot delete questions while candidates are currently taking the exam.' }); return;
-    return;
   }
 
   await supabase.from('questions').delete().eq('id', questionId);
@@ -443,12 +422,10 @@ export const autoTranslate = async (req: AuthRequest, res: Response): Promise<vo
   const { text, targetLanguage = 'Hindi' } = req.body;
   if (!text) {
     res.status(400).json({ message: 'No text provided' }); return;
-    return;
   }
   
   if (!process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY_2 && !process.env.OPENAI_API_KEY && !process.env.GROQ_API_KEY) {
     res.status(200).json({ translatedText: text + ` (Translation API missing)` }); return;
-    return;
   }
   
   try {

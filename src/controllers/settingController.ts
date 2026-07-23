@@ -11,14 +11,12 @@ export const getSettings = async (req: Request, res: Response): Promise<void> =>
 
     if (error && error.code !== 'PGRST116') {
       res.status(500).json({ message: error.message }); return;
-      return;
     }
 
     if (!settings) {
       const { data: newSettings, error: createError } = await supabase.from('settings').insert({}).select().single();
       if (createError) {
         res.status(500).json({ message: createError.message }); return;
-        return;
       }
       settings = newSettings;
     }
@@ -71,7 +69,6 @@ export const updateSettings = async (req: AuthRequest, res: Response): Promise<v
 
     if (error) {
       res.status(500).json({ message: error.message }); return;
-      return;
     }
 
     // Map back for frontend

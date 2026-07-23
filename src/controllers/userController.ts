@@ -9,7 +9,6 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
   const { data: users, error } = await supabase.from('profiles').select('*');
   if (error) {
     res.status(500).json({ message: error.message }); return;
-    return;
   }
   const formattedUsers = users.map(u => ({ ...u, _id: u.id }));
   res.json(formattedUsers);
@@ -93,14 +92,12 @@ export const changeUserPassword = async (req: Request, res: Response): Promise<v
     const passwordRegex = /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{6,}$/;
     if (!newPassword || !passwordRegex.test(newPassword)) {
       res.status(400).json({ message: 'Password must be at least 6 characters and contain a letter, a number, and a special character.' }); return;
-      return;
     }
 
     const { error } = await supabase.auth.admin.updateUserById(req.params.id as string, { password: newPassword });
 
     if (error) {
       res.status(400).json({ message: error.message }); return;
-      return;
     }
 
     res.json({ message: 'Password updated successfully' });
@@ -118,13 +115,11 @@ export const deleteUser = async (req: AuthRequest, res: Response): Promise<void>
 
     if (!adminPassword) {
       res.status(400).json({ message: 'Admin password is required to delete a user permanently' }); return;
-      return;
     }
 
     // Verify admin password by attempting to sign in
     if (!req.user || !req.user.email) {
       res.status(401).json({ message: 'Admin not found' }); return;
-      return;
     }
 
     const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
@@ -134,7 +129,6 @@ export const deleteUser = async (req: AuthRequest, res: Response): Promise<void>
 
     if (signInError || !signInData.user) {
       res.status(401).json({ message: 'Invalid admin password. Deletion aborted.' }); return;
-      return;
     }
 
     const { data: userToDelete } = await supabase.from('profiles').select('role').eq('id', req.params.id).single();
@@ -142,7 +136,6 @@ export const deleteUser = async (req: AuthRequest, res: Response): Promise<void>
     if (userToDelete) {
       if (userToDelete.role === 'Admin') {
         res.status(403).json({ message: 'Cannot delete another Admin account' }); return;
-        return;
       }
       // Delete from Auth
       await supabase.auth.admin.deleteUser(req.params.id as string);
@@ -195,7 +188,6 @@ export const bulkImportUsers = async (req: any, res: Response): Promise<void> =>
     const file = req.file;
     if (!file) {
       res.status(400).json({ message: 'No CSV file uploaded' }); return;
-      return;
     }
 
     const csvData = file.buffer.toString('utf-8');
@@ -203,7 +195,6 @@ export const bulkImportUsers = async (req: any, res: Response): Promise<void> =>
 
     if (lines.length < 2) {
       res.status(400).json({ message: 'CSV file is empty or missing data rows' }); return;
-      return;
     }
 
     const headers = lines[0].split(',').map((h: string) => h.trim().toLowerCase());

@@ -12,29 +12,24 @@ export const startExam = async (req: AuthRequest, res: Response): Promise<void> 
 
   if (!exam) {
     res.status(404).json({ message: 'Exam not found' }); return;
-    return;
   }
 
   const { data: settings } = await supabase.from('settings').select('*').single();
   if (settings?.maintenance_mode && req.user.role === 'Candidate') {
     res.status(503).json({ message: 'The platform is currently under maintenance. New exams cannot be started.' }); return;
-    return;
   }
 
   const now = new Date();
   if (exam.scheduled_start_date && new Date(exam.scheduled_start_date) > now) {
     res.status(403).json({ message: 'Exam has not started yet', availableFrom: exam.scheduled_start_date }); return;
-    return;
   }
   if (exam.scheduled_end_date && new Date(exam.scheduled_end_date) < now) {
     res.status(403).json({ message: 'Exam has already ended' }); return;
-    return;
   }
 
   if (exam.test_key && exam.test_key.trim() !== '') {
     if (req.body.testKey !== exam.test_key) {
       res.status(401).json({ message: 'Invalid or missing test password.' }); return;
-      return;
     }
   }
 
@@ -45,7 +40,6 @@ export const startExam = async (req: AuthRequest, res: Response): Promise<void> 
       
     if (existingCompleted) {
       res.status(403).json({ message: 'You have already submitted this exam and multiple attempts are not allowed.' }); return;
-      return;
     }
   }
 
@@ -69,7 +63,6 @@ export const startExam = async (req: AuthRequest, res: Response): Promise<void> 
     
     if (error) {
       res.status(500).json({ message: error.message }); return;
-      return;
     }
     attempt = newAttempt;
   }
@@ -98,12 +91,10 @@ export const heartbeatSync = async (req: AuthRequest, res: Response): Promise<vo
 
   if (!attempt) {
     res.status(404).json({ message: 'Attempt not found' }); return;
-    return;
   }
 
   if (attempt.status !== 'In-Progress') {
     res.status(400).json({ message: 'Exam already submitted or blocked' }); return;
-    return;
   }
 
   const updates: any = {};
@@ -122,7 +113,6 @@ export const heartbeatSync = async (req: AuthRequest, res: Response): Promise<vo
   
   if (error) {
     res.status(500).json({ message: error.message }); return;
-    return;
   }
 
   res.status(200).json({ message: 'Sync successful', status: updatedAttempt.status }); return;
@@ -139,12 +129,10 @@ export const submitExam = async (req: AuthRequest, res: Response): Promise<void>
 
   if (!attempt) {
     res.status(404).json({ message: 'Attempt not found' }); return;
-    return;
   }
 
   if (attempt.status === 'Submitted') {
     res.status(400).json({ message: 'Exam already submitted' }); return;
-    return;
   }
 
   const updates: any = {
@@ -158,7 +146,7 @@ export const submitExam = async (req: AuthRequest, res: Response): Promise<void>
   if (violationReason) updates.violation_reason = violationReason;
 
   const { data: updatedAttempt, error: updateError } = await supabase.from('exam_attempts').update(updates).eq('id', id).select().single();
-  if (updateError) res.status(500).json({ message: updateError.message }); return;
+  if (updateError) { res.status(500).json({ message: updateError.message }); return; }
   
   const finalAnswers = answers || attempt.answers || [];
 
@@ -201,7 +189,7 @@ export const submitExam = async (req: AuthRequest, res: Response): Promise<void>
     answers: finalAnswers
   }).select().single();
 
-  if (resultError) res.status(500).json({ message: resultError?.message }); return;
+  if (resultError) { res.status(500).json({ message: resultError?.message }); return; }
 
   res.status(200).json({ ...result, _id: result.id }); return;
 };
@@ -215,12 +203,10 @@ export const getDetailedResult = async (req: AuthRequest, res: Response): Promis
   const { data: result } = await supabase.from('results').select('*, exam:exam_id(title, description, duration_minutes)').eq('id', resultId).single();
   if (!result) {
     res.status(404).json({ message: 'Result not found' }); return;
-    return;
   }
   
   if (req.user.role === 'Candidate' && result.candidate_id !== req.user._id) {
     res.status(403).json({ message: 'Not authorized to view this result' }); return;
-    return;
   }
   
   const { data: attempt } = await supabase.from('exam_attempts').select('answers').eq('id', result.attempt_id).single();
@@ -261,9 +247,8 @@ export const getResult = async (req: AuthRequest, res: Response): Promise<void> 
     
     if (result && result.exam && (result.exam as any).release_results_instantly === false && !result.is_released) {
       res.status(403).json({ message: 'Results for this exam have not been released yet.' }); return;
-      return;
     }
-    if (!result) res.status(404).json({ message: 'Result not found' }); return;
+    if (!result) { res.status(404).json({ message: 'Result not found' }); return; }
     res.status(200).json({ ...result, _id: result.id, examId: result.exam }); return;
   } else {
     let query = supabase.from('results').select('*, exam:exam_id(title), candidate:candidate_id(name, email, bsgid, role)').eq('exam_id', examId);
@@ -282,7 +267,6 @@ export const getResult = async (req: AuthRequest, res: Response): Promise<void> 
 export const getMyResults = async (req: AuthRequest, res: Response): Promise<void> => {
   if (req.user.role !== 'Candidate') {
     res.status(403).json({ message: 'Only candidates can view their past results' }); return;
-    return;
   }
 
   const { data: results, error } = await supabase
@@ -291,7 +275,7 @@ export const getMyResults = async (req: AuthRequest, res: Response): Promise<voi
     .eq('candidate_id', req.user._id)
     .order('created_at', { ascending: false });
 
-  if (error) res.status(500).json({ message: error.message }); return;
+  if (error) { res.status(500).json({ message: error.message }); return; }
 
   const filtered = (results || []).filter((r: any) => r.is_released || (r.exam && r.exam.release_results_instantly !== false));
 
@@ -428,11 +412,9 @@ export const clearExamResults = async (req: AuthRequest, res: Response): Promise
   const { data: exam } = await supabase.from('exams').select('creator_id').eq('id', examId).single();
   if (!exam) {
     res.status(404).json({ message: 'Exam not found' }); return;
-    return;
   }
   if (req.user.role !== 'Admin' && exam.creator_id !== req.user._id) {
     res.status(403).json({ message: 'Not authorized' }); return;
-    return;
   }
   
   await supabase.from('results').delete().eq('exam_id', examId);
@@ -450,12 +432,10 @@ export const deleteExamResult = async (req: AuthRequest, res: Response): Promise
   const { data: result } = await supabase.from('results').select('*, exam:exam_id(creator_id)').eq('id', resultId).single();
   if (!result) {
     res.status(404).json({ message: 'Result not found' }); return;
-    return;
   }
   
   if (req.user.role !== 'Admin' && result.exam?.creator_id !== req.user._id) {
     res.status(403).json({ message: 'Not authorized' }); return;
-    return;
   }
   
   await supabase.from('results').delete().eq('id', resultId);
@@ -470,8 +450,8 @@ export const deleteExamResult = async (req: AuthRequest, res: Response): Promise
 export const toggleResultRelease = async (req: AuthRequest, res: Response): Promise<void> => {
   const { resultId } = req.params;
   const { data: result } = await supabase.from('results').select('*, exam:exam_id(creator_id)').eq('id', resultId).single();
-  if (!result) res.status(404).json({ message: 'Result not found' }); return;
-  if (req.user.role !== 'Admin' && result.exam?.creator_id !== req.user._id) res.status(403).json({ message: 'Not authorized' }); return;
+  if (!result) { res.status(404).json({ message: 'Result not found' }); return; }
+  if (req.user.role !== 'Admin' && result.exam?.creator_id !== req.user._id) { res.status(403).json({ message: 'Not authorized' }); return; }
   
   const { data: updatedResult } = await supabase.from('results').update({ is_released: !result.is_released }).eq('id', resultId).select().single();
   res.status(200).json(updatedResult); return;
@@ -484,10 +464,10 @@ export const cancelAttempt = async (req: AuthRequest, res: Response): Promise<vo
   const { id } = req.params;
 
   const { data: attempt } = await supabase.from('exam_attempts').select('*, exam:exam_id(creator_id, questions(marks))').eq('id', id).single();
-  if (!attempt) res.status(404).json({ message: 'Attempt not found' }); return;
-  if (req.user.role !== 'Admin' && attempt.exam?.creator_id !== req.user._id) res.status(403).json({ message: 'Not authorized' }); return;
+  if (!attempt) { res.status(404).json({ message: 'Attempt not found' }); return; }
+  if (req.user.role !== 'Admin' && attempt.exam?.creator_id !== req.user._id) { res.status(403).json({ message: 'Not authorized' }); return; }
 
-  if (attempt.status !== 'In-Progress') res.status(400).json({ message: 'Can only cancel in-progress attempts' }); return;
+  if (attempt.status !== 'In-Progress') { res.status(400).json({ message: 'Can only cancel in-progress attempts' }); return; }
 
   const totalMarks = attempt.exam?.questions?.reduce((acc: number, q: any) => acc + (q.marks || 1), 0) || 0;
   const { data: result } = await supabase.from('results').insert({

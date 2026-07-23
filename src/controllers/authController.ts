@@ -17,7 +17,6 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
 
     if (signInError || !signInData.user) {
       res.status(401).json({ message: 'Invalid credentials' }); return;
-      return;
     }
 
     const { data: userProfile, error: profileError } = await supabase
@@ -28,17 +27,14 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
 
     if (profileError || !userProfile) {
       res.status(401).json({ message: 'User profile not found' }); return;
-      return;
     }
 
     if (userProfile.status === 'Blocked') {
       res.status(403).json({ message: 'User is blocked' }); return;
-      return;
     }
 
     if (userProfile.locked_until && new Date(userProfile.locked_until) > new Date()) {
       res.status(403).json({ message: `Account is temporarily locked. Try again later.` }); return;
-      return;
     }
     
     // Reset failed attempts
@@ -99,12 +95,10 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
     const nameRegex = /^[a-zA-Z\s]+$/;
     if (!nameRegex.test(name)) {
       res.status(400).json({ message: 'Name can only contain letters and spaces.' }); return;
-      return;
     }
 
     if (password.length < 6) {
       res.status(400).json({ message: 'Password must be at least 6 characters.' }); return;
-      return;
     }
 
     let assignedRole: 'Candidate' | 'Examiner' | 'Admin' = 'Candidate';
@@ -114,7 +108,6 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
       assignedRole = 'Examiner';
     } else if (examinerCode) {
       res.status(400).json({ message: 'Invalid Examiner Secret Code' }); return;
-      return;
     }
 
     const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -127,7 +120,6 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
 
     if (authError || !authData.user) {
       res.status(400).json({ message: authError?.message || 'Registration failed' }); return;
-      return;
     }
 
     const { data: profileData, error: profileError } = await supabase.from('profiles').insert({
@@ -145,7 +137,6 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
 
     if (profileError) {
       res.status(400).json({ message: profileError.message }); return;
-      return;
     }
 
     const token = authData.session?.access_token || '';
@@ -234,7 +225,6 @@ export const createExaminer = async (req: Request, res: Response): Promise<void>
 
     if (authError || !authData.user) {
       res.status(400).json({ message: authError?.message || 'Failed to create examiner' }); return;
-      return;
     }
 
     const { data: user, error: profileError } = await supabase.from('profiles').insert({
@@ -250,7 +240,6 @@ export const createExaminer = async (req: Request, res: Response): Promise<void>
 
     if (profileError) {
       res.status(400).json({ message: profileError.message }); return;
-      return;
     }
 
     res.status(201).json({
@@ -278,12 +267,10 @@ export const updateUserProfile = async (req: any, res: Response): Promise<void> 
       const passwordRegex = /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{6,}$/;
       if (!passwordRegex.test(req.body.password)) {
         res.status(400).json({ message: 'Password must be at least 6 characters and contain a letter, a number, and a special character.' }); return;
-        return;
       }
       const { error: authError } = await supabase.auth.admin.updateUserById(req.user._id, { password: req.body.password });
       if (authError) {
          res.status(400).json({ message: authError.message }); return;
-         return;
       }
     }
 
@@ -291,7 +278,6 @@ export const updateUserProfile = async (req: any, res: Response): Promise<void> 
 
     if (error || !updatedUser) {
       res.status(404).json({ message: 'User not found' }); return;
-      return;
     }
 
     res.json({

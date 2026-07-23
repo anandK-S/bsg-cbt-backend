@@ -13,7 +13,7 @@ export const getExams = async (req: AuthRequest, res: Response) => {
   }
   
   const { data: exams, error } = await query;
-  if (error) res.status(500).json({ message: error.message }); return;
+  if (error) { res.status(500).json({ message: error.message }); return; }
 
   const examIds = (exams || []).map(e => e.id);
   
@@ -61,7 +61,7 @@ export const getAvailableExams = async (req: AuthRequest, res: Response) => {
     .select('*, creator:creator_id(name), questions(marks)')
     .or(`status.eq.Published,and(scheduled_start_date.lte.${now},scheduled_end_date.gte.${now})`);
 
-  if (error) res.status(500).json({ message: error.message }); return;
+  if (error) { res.status(500).json({ message: error.message }); return; }
 
   const formattedExams = (exams || []).map(exam => {
     let maxScore = 0;
@@ -110,7 +110,7 @@ export const createExam = async (req: AuthRequest, res: Response) => {
     creator_id: req.user._id,
   }).select().single();
 
-  if (error) res.status(500).json({ message: error.message }); return;
+  if (error) { res.status(500).json({ message: error.message }); return; }
 
   res.status(201).json({ ...exam, _id: exam.id }); return;
 };
@@ -127,7 +127,6 @@ export const getExamById = async (req: AuthRequest, res: Response): Promise<void
 
   if (error || !exam) {
     res.status(404).json({ message: 'Exam not found' }); return;
-    return;
   }
 
   const examObj: any = {
@@ -165,24 +164,20 @@ export const updateExamStatus = async (req: AuthRequest, res: Response): Promise
 
   if (!['Draft', 'Published', 'Archived'].includes(status)) {
     res.status(400).json({ message: 'Invalid status' }); return;
-    return;
   }
 
   const { data: exam } = await supabase.from('exams').select('creator_id').eq('id', id).single();
   if (!exam) {
     res.status(404).json({ message: 'Exam not found' }); return;
-    return;
   }
 
   if (req.user.role !== 'Admin' && exam.creator_id !== req.user._id) {
     res.status(403).json({ message: 'Not authorized to update this exam' }); return;
-    return;
   }
 
   const { data: updatedExam, error } = await supabase.from('exams').update({ status }).eq('id', id).select().single();
   if (error) {
      res.status(500).json({ message: error.message }); return;
-     return;
   }
   res.json({ message: 'Status updated', exam: { ...updatedExam, _id: updatedExam.id } });
 };
@@ -197,12 +192,10 @@ export const updateExam = async (req: AuthRequest, res: Response): Promise<void>
   const { data: exam } = await supabase.from('exams').select('creator_id').eq('id', id).single();
   if (!exam) {
     res.status(404).json({ message: 'Exam not found' }); return;
-    return;
   }
 
   if (req.user.role !== 'Admin' && exam.creator_id !== req.user._id) {
     res.status(403).json({ message: 'Not authorized to update this exam' }); return;
-    return;
   }
 
   const updates: any = {};
@@ -222,7 +215,7 @@ export const updateExam = async (req: AuthRequest, res: Response): Promise<void>
   if (testKey !== undefined) updates.test_key = testKey;
 
   const { data: updatedExam, error } = await supabase.from('exams').update(updates).eq('id', id).select().single();
-  if (error) res.status(500).json({ message: error.message }); return;
+  if (error) { res.status(500).json({ message: error.message }); return; }
 
   res.json({ message: 'Exam updated', exam: { ...updatedExam, _id: updatedExam.id } });
 };
@@ -236,18 +229,15 @@ export const deleteExam = async (req: AuthRequest, res: Response): Promise<void>
   const { data: exam } = await supabase.from('exams').select('creator_id').eq('id', id).single();
   if (!exam) {
     res.status(404).json({ message: 'Exam not found' }); return;
-    return;
   }
 
   if (req.user.role !== 'Admin' && exam.creator_id !== req.user._id) {
     res.status(403).json({ message: 'Not authorized to delete this exam' }); return;
-    return;
   }
   
   const { data: activeAttempts } = await supabase.from('exam_attempts').select('id').eq('exam_id', id).eq('status', 'In-Progress').limit(1);
   if (activeAttempts && activeAttempts.length > 0) {
     res.status(400).json({ message: 'Cannot delete this exam because candidates are currently taking it.' }); return;
-    return;
   }
 
   await supabase.from('exams').delete().eq('id', id);

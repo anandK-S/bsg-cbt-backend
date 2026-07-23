@@ -1,4 +1,4 @@
-import Exam from '../models/Exam';
+import { supabase } from '../config/supabase';
 
 /**
  * Starts a background scheduler that runs every minute to:
@@ -9,37 +9,31 @@ export const startScheduler = (): void => {
   console.log('[Scheduler] Auto-publish/unpublish scheduler started (interval: 60s)');
 
   setInterval(async () => {
-    const now = new Date();
+    const now = new Date().toISOString();
 
     try {
       // --- Auto-publish ---
-      const publishResult = await Exam.updateMany(
-        {
-          status: 'Draft',
-          scheduledStartDate: { $ne: null, $lte: now },
-        },
-        { $set: { status: 'Published' } }
-      );
+      const { data: publishData, error: publishError } = await supabase
+        .from('exams')
+        .update({ status: 'Published' })
+        .eq('status', 'Draft')
+        .lte('scheduled_start_date', now)
+        .select();
 
-      if (publishResult.modifiedCount > 0) {
-        console.log(
-          `[Scheduler] Auto-published ${publishResult.modifiedCount} exam(s) at ${now.toISOString()}`
-        );
+      if (publishData && publishData.length > 0) {
+        console.log(`[Scheduler] Auto-published ${publishData.length} exam(s) at ${now}`);
       }
 
       // --- Auto-unpublish ---
-      const unpublishResult = await Exam.updateMany(
-        {
-          status: 'Published',
-          scheduledEndDate: { $ne: null, $lte: now },
-        },
-        { $set: { status: 'Draft' } }
-      );
+      const { data: unpublishData, error: unpublishError } = await supabase
+        .from('exams')
+        .update({ status: 'Draft' })
+        .eq('status', 'Published')
+        .lte('scheduled_end_date', now)
+        .select();
 
-      if (unpublishResult.modifiedCount > 0) {
-        console.log(
-          `[Scheduler] Auto-unpublished ${unpublishResult.modifiedCount} exam(s) at ${now.toISOString()}`
-        );
+      if (unpublishData && unpublishData.length > 0) {
+        console.log(`[Scheduler] Auto-unpublished ${unpublishData.length} exam(s) at ${now}`);
       }
     } catch (err) {
       console.error('[Scheduler] Error during auto-publish/unpublish check:', err);

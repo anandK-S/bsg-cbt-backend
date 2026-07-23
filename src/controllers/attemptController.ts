@@ -1,89 +1,90 @@
 import { Response } from 'express';
-import ExamAttempt from '../models/ExamAttempt';
-import Exam from '../models/Exam';
-import Result from '../models/Result';
+import { supabase } from '../config/supabase';
 import { AuthRequest } from '../middleware/authMiddleware';
-import Setting from '../models/Setting';
-import mongoose from 'mongoose';
 import { generateAIContent } from '../utils/aiService';
-
-// We initialize inside the function so it doesn't crash on startup if the key is missing
 
 // @desc    Start an exam attempt
 // @route   POST /api/exams/:id/start
 // @access  Private/Candidate
 export const startExam = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const exam = await Exam.findById(id).populate('questions.questionId');
+  const { data: exam } = await supabase.from('exams').select('*, questions(*)').eq('id', id).single();
 
   if (!exam) {
-    res.status(404).json({ message: 'Exam not found' });
+    res.status(404).json({ message: 'Exam not found' }); return;
     return;
   }
 
-  const settings = await Setting.findOne();
-  if (settings?.maintenanceMode && req.user.role === 'Candidate') {
-    res.status(503).json({ message: 'The platform is currently under maintenance. New exams cannot be started.' });
+  const { data: settings } = await supabase.from('settings').select('*').single();
+  if (settings?.maintenance_mode && req.user.role === 'Candidate') {
+    res.status(503).json({ message: 'The platform is currently under maintenance. New exams cannot be started.' }); return;
     return;
   }
 
-  // Check scheduled dates
   const now = new Date();
-  if (exam.scheduledStartDate && new Date(exam.scheduledStartDate) > now) {
-    res.status(403).json({ message: 'Exam has not started yet', availableFrom: exam.scheduledStartDate });
+  if (exam.scheduled_start_date && new Date(exam.scheduled_start_date) > now) {
+    res.status(403).json({ message: 'Exam has not started yet', availableFrom: exam.scheduled_start_date }); return;
     return;
   }
-  if (exam.scheduledEndDate && new Date(exam.scheduledEndDate) < now) {
-    res.status(403).json({ message: 'Exam has already ended' });
+  if (exam.scheduled_end_date && new Date(exam.scheduled_end_date) < now) {
+    res.status(403).json({ message: 'Exam has already ended' }); return;
     return;
   }
 
-  // Check testKey if present
-  if (exam.testKey && exam.testKey.trim() !== '') {
-    if (req.body.testKey !== exam.testKey) {
-      res.status(401).json({ message: 'Invalid or missing test password.' });
+  if (exam.test_key && exam.test_key.trim() !== '') {
+    if (req.body.testKey !== exam.test_key) {
+      res.status(401).json({ message: 'Invalid or missing test password.' }); return;
       return;
     }
   }
 
-  // Check multiple attempts configuration
-  if (!exam.allowMultipleAttempts) {
-    const existingCompleted = await ExamAttempt.findOne({
-      candidateId: req.user._id,
-      examId: id,
-      status: { $in: ['Submitted', 'Auto-Submitted', 'Blocked'] }
-    });
+  if (!exam.allow_multiple_attempts) {
+    const { data: existingCompleted } = await supabase.from('exam_attempts')
+      .select('id').eq('candidate_id', req.user._id).eq('exam_id', id)
+      .in('status', ['Submitted', 'Auto-Submitted', 'Blocked']).maybeSingle();
+      
     if (existingCompleted) {
-      res.status(403).json({ message: 'You have already submitted this exam and multiple attempts are not allowed.' });
+      res.status(403).json({ message: 'You have already submitted this exam and multiple attempts are not allowed.' }); return;
       return;
     }
   }
 
-  // Check if attempt already exists and is in-progress
-  let attempt = await ExamAttempt.findOne({ candidateId: req.user._id, examId: id, status: 'In-Progress' });
+  let { data: attempt } = await supabase.from('exam_attempts')
+    .select('*').eq('candidate_id', req.user._id).eq('exam_id', id).eq('status', 'In-Progress').maybeSingle();
 
   if (!attempt) {
-    const totalSeconds = exam.durationSeconds ? exam.durationSeconds : (exam.durationMinutes * 60);
-    attempt = new ExamAttempt({
-      candidateId: req.user._id,
-      examId: id,
-      timeRemaining: totalSeconds,
-      answers: exam.questions.map((q: any) => ({
-        questionId: q.questionId._id,
-        status: 'NotVisited',
-      })),
-    });
-    await attempt.save();
+    const totalSeconds = exam.duration_seconds ? exam.duration_seconds : (exam.duration_minutes * 60);
+    const initialAnswers = exam.questions.map((q: any) => ({
+      questionId: q.id,
+      status: 'NotVisited',
+    }));
+
+    const { data: newAttempt, error } = await supabase.from('exam_attempts').insert({
+      candidate_id: req.user._id,
+      exam_id: id,
+      time_remaining: totalSeconds,
+      answers: initialAnswers,
+      status: 'In-Progress'
+    }).select().single();
+    
+    if (error) {
+      res.status(500).json({ message: error.message }); return;
+      return;
+    }
+    attempt = newAttempt;
   }
 
-  // Hide correctOptionIndex from candidate
   const sanitizedQuestions = exam.questions.map((q: any) => {
-    const questionObj = q.questionId.toObject();
-    delete questionObj.correctOptionIndex;
-    return questionObj;
+    const { correct_option_index, ...rest } = q;
+    return { ...rest, _id: rest.id };
   });
 
-  res.status(200).json({ attempt, questions: sanitizedQuestions, examTitle: exam.title, durationMinutes: exam.durationMinutes });
+  res.status(200).json({ 
+    attempt: { ...attempt, _id: attempt.id, timeRemaining: attempt.time_remaining }, 
+    questions: sanitizedQuestions, 
+    examTitle: exam.title, 
+    durationMinutes: exam.duration_minutes 
+  });
 };
 
 // @desc    Heartbeat sync (save state)
@@ -93,35 +94,38 @@ export const heartbeatSync = async (req: AuthRequest, res: Response): Promise<vo
   const { id } = req.params;
   const { answers, timeRemaining, warnings, timeSpentAnalytics } = req.body;
 
-  const attempt = await ExamAttempt.findById(id);
+  const { data: attempt } = await supabase.from('exam_attempts').select('*').eq('id', id).single();
 
   if (!attempt) {
-    res.status(404).json({ message: 'Attempt not found' });
+    res.status(404).json({ message: 'Attempt not found' }); return;
     return;
   }
 
   if (attempt.status !== 'In-Progress') {
-    res.status(400).json({ message: 'Exam already submitted or blocked' });
+    res.status(400).json({ message: 'Exam already submitted or blocked' }); return;
     return;
   }
 
-  attempt.answers = answers;
-  attempt.timeRemaining = timeRemaining;
-  
-  if (timeSpentAnalytics) {
-    attempt.timeSpentAnalytics = timeSpentAnalytics;
-  }
+  const updates: any = {};
+  if (answers) updates.answers = answers;
+  if (timeRemaining !== undefined) updates.time_remaining = timeRemaining;
+  if (timeSpentAnalytics) updates.time_spent_analytics = timeSpentAnalytics;
   
   if (warnings !== undefined) {
-    attempt.warnings = warnings;
-    if (attempt.warnings >= 1) {
-      attempt.status = 'Blocked';
+    updates.warnings = warnings;
+    if (warnings >= 1) {
+      updates.status = 'Blocked';
     }
   }
 
-  await attempt.save();
+  const { data: updatedAttempt, error } = await supabase.from('exam_attempts').update(updates).eq('id', id).select().single();
+  
+  if (error) {
+    res.status(500).json({ message: error.message }); return;
+    return;
+  }
 
-  res.status(200).json({ message: 'Sync successful', status: attempt.status });
+  res.status(200).json({ message: 'Sync successful', status: updatedAttempt.status }); return;
 };
 
 // @desc    Submit exam
@@ -129,107 +133,77 @@ export const heartbeatSync = async (req: AuthRequest, res: Response): Promise<vo
 // @access  Private/Candidate
 export const submitExam = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { answers, timeRemaining, timeSpentAnalytics } = req.body;
+  const { answers, timeRemaining, timeSpentAnalytics, violationReason } = req.body;
 
-  const attempt = await ExamAttempt.findById(id);
+  const { data: attempt } = await supabase.from('exam_attempts').select('*').eq('id', id).single();
 
   if (!attempt) {
-    res.status(404).json({ message: 'Attempt not found' });
+    res.status(404).json({ message: 'Attempt not found' }); return;
     return;
   }
 
   if (attempt.status === 'Submitted') {
-    res.status(400).json({ message: 'Exam already submitted' });
+    res.status(400).json({ message: 'Exam already submitted' }); return;
     return;
   }
 
-  if (answers) {
-    attempt.answers = answers;
-  }
-  if (timeRemaining !== undefined) {
-    attempt.timeRemaining = timeRemaining;
-  }
-  if (timeSpentAnalytics) {
-    attempt.timeSpentAnalytics = timeSpentAnalytics;
-  }
-  if (req.body.violationReason) {
-    (attempt as any).violationReason = req.body.violationReason;
-  }
+  const updates: any = {
+    status: 'Submitted',
+    end_time: new Date().toISOString()
+  };
+  
+  if (answers) updates.answers = answers;
+  if (timeRemaining !== undefined) updates.time_remaining = timeRemaining;
+  if (timeSpentAnalytics) updates.time_spent_analytics = timeSpentAnalytics;
+  if (violationReason) updates.violation_reason = violationReason;
 
-  const exam = await Exam.findById(attempt.examId).populate('questions.questionId');
+  const { data: updatedAttempt, error: updateError } = await supabase.from('exam_attempts').update(updates).eq('id', id).select().single();
+  if (updateError) res.status(500).json({ message: updateError.message }); return;
+  
+  const finalAnswers = answers || attempt.answers || [];
+
+  const { data: exam } = await supabase.from('exams').select('*, questions(*)').eq('id', attempt.exam_id).single();
 
   let score = 0;
   let totalMarks = 0;
 
-  // Calculate Total Marks
   exam?.questions.forEach((q: any) => {
     totalMarks += q.marks || 1;
   });
 
-  // Calculate Score
-  attempt.answers.forEach((ans) => {
-    const examQuestion = exam?.questions.find(
-      (q: any) => q.questionId && q.questionId._id.toString() === ans.questionId.toString()
-    );
-    if (examQuestion && examQuestion.questionId) {
-      const correctIndex = (examQuestion.questionId as any).correctOptionIndex;
-      console.log(`QID: ${ans.questionId.toString()}, Selected: ${ans.selectedOptionIndex}, Correct: ${correctIndex}`);
-      if (
-        ans.selectedOptionIndex !== undefined &&
-        ans.selectedOptionIndex !== null &&
-        Number(ans.selectedOptionIndex) === Number(correctIndex)
-      ) {
-        score += examQuestion.marks;
+  finalAnswers.forEach((ans: any) => {
+    const examQuestion = exam?.questions.find((q: any) => q.id === ans.questionId);
+    if (examQuestion) {
+      if (ans.selectedOptionIndex !== undefined && ans.selectedOptionIndex !== null && Number(ans.selectedOptionIndex) === Number(examQuestion.correct_option_index)) {
+        score += (examQuestion.marks || 1);
       }
-    } else {
-      console.log(`Missing examQuestion for QID: ${ans.questionId.toString()}`);
     }
   });
-  console.log(`Final Score: ${score} / ${totalMarks}`);
-
-  attempt.status = 'Submitted';
-  attempt.endTime = new Date();
-  await attempt.save();
 
   let aiFeedback = "Good job on completing the exam! Review your correct and incorrect answers to improve your score next time.";
-  
   if (process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY_2 || process.env.OPENAI_API_KEY || process.env.GROQ_API_KEY) {
     try {
-      const prompt = `The candidate just completed a multiple-choice exam. They scored ${score} out of ${totalMarks}.
-Analyze their performance and give a brief, encouraging qualitative summary pointing out areas of strength and areas to improve based on the category of questions they got right/wrong.
-Do not provide a generic response; write directly to the candidate as a supportive tutor. Keep it under 3 sentences.`;
-
       const aiText = await generateAIContent({
-        userPrompt: prompt
+        userPrompt: `The candidate just completed a multiple-choice exam. They scored ${score} out of ${totalMarks}. Analyze their performance and give a brief, encouraging qualitative summary. Keep it under 3 sentences.`
       });
-      
-      if (aiText) {
-        aiFeedback = aiText;
-      }
-    } catch (error) {
-      console.error("AI feedback generation failed:", error);
-      // Fallback stays intact
-    }
+      if (aiText) aiFeedback = aiText;
+    } catch (error) {}
   }
 
-  const resultData: any = {
-    attemptId: attempt._id,
-    candidateId: attempt.candidateId,
-    examId: attempt.examId,
+  const { data: result, error: resultError } = await supabase.from('results').insert({
+    attempt_id: id,
+    candidate_id: attempt.candidate_id,
+    exam_id: attempt.exam_id,
     score,
-    totalMarks,
-    aiFeedback,
-  };
-  
-  if (req.body.violationReason) {
-    resultData.violationReason = req.body.violationReason;
-  }
+    total_marks: totalMarks,
+    ai_feedback: aiFeedback,
+    violation_reason: violationReason,
+    answers: finalAnswers
+  }).select().single();
 
-  const result = new Result(resultData);
+  if (resultError) res.status(500).json({ message: resultError?.message }); return;
 
-  await result.save();
-
-  res.status(200).json(result);
+  res.status(200).json({ ...result, _id: result.id }); return;
 };
 
 // @desc    Get detailed result by result ID
@@ -238,48 +212,40 @@ Do not provide a generic response; write directly to the candidate as a supporti
 export const getDetailedResult = async (req: AuthRequest, res: Response): Promise<void> => {
   const { resultId } = req.params;
   
-  const result = await Result.findById(resultId).populate('examId', 'title description durationMinutes');
-  
+  const { data: result } = await supabase.from('results').select('*, exam:exam_id(title, description, duration_minutes)').eq('id', resultId).single();
   if (!result) {
-    res.status(404).json({ message: 'Result not found' });
+    res.status(404).json({ message: 'Result not found' }); return;
     return;
   }
   
-  // Authorization: Candidate can only view their own. Admins/Examiners can view anyone's.
-  if (req.user.role === 'Candidate' && result.candidateId.toString() !== req.user._id.toString()) {
-    res.status(403).json({ message: 'Not authorized to view this result' });
+  if (req.user.role === 'Candidate' && result.candidate_id !== req.user._id) {
+    res.status(403).json({ message: 'Not authorized to view this result' }); return;
     return;
   }
   
-  const attempt = await ExamAttempt.findById(result.attemptId);
-  const exam = await Exam.findById(result.examId).populate('questions.questionId');
+  const { data: attempt } = await supabase.from('exam_attempts').select('answers').eq('id', result.attempt_id).single();
+  const { data: questions } = await supabase.from('questions').select('*').eq('exam_id', result.exam_id);
   
-  if (!attempt || !exam) {
-    res.status(404).json({ message: 'Missing attempt or exam data' });
-    return;
-  }
+  const attemptAnswers = result.answers || attempt?.answers || [];
   
-  // Merge questions with candidate's answers and correct answers
-  const questionDetails = exam.questions.map((q: any) => {
-    const qObj = q.questionId.toObject();
-    const candidateAnswer = attempt.answers.find((a: any) => a.questionId.toString() === qObj._id.toString());
-    
+  const questionDetails = (questions || []).map((q: any) => {
+    const candidateAnswer = attemptAnswers.find((a: any) => a.questionId === q.id);
     return {
-      _id: qObj._id,
-      text: qObj.text,
-      textHindi: qObj.textHindi,
-      options: qObj.options,
-      optionsHindi: qObj.optionsHindi,
-      correctOptionIndex: qObj.correctOptionIndex,
-      marks: q.marks,
+      _id: q.id,
+      text: q.text,
+      textHindi: q.text_hindi,
+      options: q.options,
+      optionsHindi: q.options_hindi,
+      correctOptionIndex: q.correct_option_index,
+      marks: q.marks || 1,
       candidateAnswerIndex: candidateAnswer?.selectedOptionIndex ?? null,
       viewedLanguage: candidateAnswer?.viewedLanguage || 'en',
-      isCorrect: candidateAnswer?.selectedOptionIndex === qObj.correctOptionIndex
+      isCorrect: candidateAnswer?.selectedOptionIndex === q.correct_option_index
     };
   });
   
   res.status(200).json({
-    result,
+    result: { ...result, _id: result.id, examId: result.exam },
     questionDetails
   });
 };
@@ -290,37 +256,24 @@ export const getDetailedResult = async (req: AuthRequest, res: Response): Promis
 export const getResult = async (req: AuthRequest, res: Response): Promise<void> => {
   const { examId } = req.params;
   
-  // Find result for this candidate and this exam
-  let result;
-  
   if (req.user.role === 'Candidate') {
-    result = await Result.findOne({ candidateId: req.user._id, examId }).populate('examId', 'title releaseResultsInstantly');
+    const { data: result } = await supabase.from('results').select('*, exam:exam_id(title, release_results_instantly)').eq('candidate_id', req.user._id).eq('exam_id', examId).maybeSingle();
     
-    // Check if results are released
-    if (result && result.examId && (result.examId as any).releaseResultsInstantly === false && !result.isReleased) {
-      res.status(403).json({ message: 'Results for this exam have not been released yet.' });
+    if (result && result.exam && (result.exam as any).release_results_instantly === false && !result.is_released) {
+      res.status(403).json({ message: 'Results for this exam have not been released yet.' }); return;
       return;
     }
+    if (!result) res.status(404).json({ message: 'Result not found' }); return;
+    res.status(200).json({ ...result, _id: result.id, examId: result.exam }); return;
   } else {
-    // If Admin/Examiner wants to see it, they can pass attemptId or we just return all results for the exam
-    const query: any = { examId };
-    if (req.query.candidateId) query.candidateId = req.query.candidateId;
-    
-    // Fetch all results for the exam
-    const allResults = await Result.find(query)
-      .populate('examId', 'title')
-      .populate('candidateId', 'name email bsgId role'); // Include role
-      
-    // Filter out Admins so their testing doesn't skew candidate analytics
-    result = allResults.filter((r: any) => r.candidateId?.role === 'Candidate');
+    let query = supabase.from('results').select('*, exam:exam_id(title), candidate:candidate_id(name, email, bsgid, role)').eq('exam_id', examId);
+    if (req.query.candidateId) {
+      query = query.eq('candidate_id', req.query.candidateId);
+    }
+    const { data: allResults } = await query;
+    const candidatesResults = (allResults || []).filter((r: any) => r.candidate?.role === 'Candidate').map(r => ({ ...r, _id: r.id, examId: r.exam, candidateId: r.candidate }));
+    res.status(200).json(candidatesResults); return;
   }
-
-  if (!result) {
-    res.status(404).json({ message: 'Result not found' });
-    return;
-  }
-
-  res.status(200).json(result);
 };
 
 // @desc    Get all results for logged in candidate
@@ -328,26 +281,21 @@ export const getResult = async (req: AuthRequest, res: Response): Promise<void> 
 // @access  Private/Candidate
 export const getMyResults = async (req: AuthRequest, res: Response): Promise<void> => {
   if (req.user.role !== 'Candidate') {
-    res.status(403).json({ message: 'Only candidates can view their past results' });
+    res.status(403).json({ message: 'Only candidates can view their past results' }); return;
     return;
   }
 
-  let results = await Result.find({ candidateId: req.user._id })
-    .populate({
-      path: 'examId',
-      select: 'title durationMinutes durationSeconds category releaseResultsInstantly creatorId',
-      populate: {
-        path: 'creatorId',
-        select: 'name'
-      }
-    })
-    .populate('attemptId', 'timeRemaining startTime endTime')
-    .sort({ createdAt: -1 });
+  const { data: results, error } = await supabase
+    .from('results')
+    .select('*, exam:exam_id(title, duration_minutes, duration_seconds, category, release_results_instantly, creator_id), attempt:attempt_id(time_remaining, start_time, end_time)')
+    .eq('candidate_id', req.user._id)
+    .order('created_at', { ascending: false });
 
-  // Filter out unreleased results
-  results = results.filter((r: any) => r.isReleased || (r.examId && (r.examId as any).releaseResultsInstantly !== false));
+  if (error) res.status(500).json({ message: error.message }); return;
 
-  res.status(200).json(results);
+  const filtered = (results || []).filter((r: any) => r.is_released || (r.exam && r.exam.release_results_instantly !== false));
+
+  res.status(200).json(filtered.map(r => ({ ...r, _id: r.id, examId: r.exam, attemptId: r.attempt }))); return;
 };
 
 // @desc    Get Global Leaderboard
@@ -356,37 +304,33 @@ export const getMyResults = async (req: AuthRequest, res: Response): Promise<voi
 export const getLeaderboard = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { examId, startDate, endDate } = req.query;
-    const filter: any = {};
-    if (examId && examId !== 'All') {
-      filter.examId = examId;
+    
+    let query = supabase.from('results').select('*, candidate:candidate_id(id, name, bsgid, section, role, district)');
+    
+    if (examId && examId !== 'All') query = query.eq('exam_id', examId);
+    if (startDate) query = query.gte('created_at', new Date(startDate as string).toISOString());
+    if (endDate) {
+      const end = new Date(endDate as string);
+      end.setHours(23, 59, 59, 999);
+      query = query.lte('created_at', end.toISOString());
     }
     
-    if (startDate || endDate) {
-      filter.createdAt = {};
-      if (startDate) filter.createdAt.$gte = new Date(startDate as string);
-      if (endDate) {
-        const end = new Date(endDate as string);
-        end.setHours(23, 59, 59, 999);
-        filter.createdAt.$lte = end;
-      }
-    }
-    
-    const results = await Result.find(filter).populate('candidateId', 'name bsgId section role district');
+    const { data: results, error } = await query;
+    if (error) throw error;
 
-    // Aggregate by candidate
     const candidateMap = new Map();
 
     results.forEach((r: any) => {
-      if (!r.candidateId || r.candidateId.role === 'Admin' || r.candidateId.role === 'Examiner') return; // Only candidates
+      if (!r.candidate || r.candidate.role !== 'Candidate') return;
       
-      const cid = r.candidateId._id.toString();
+      const cid = r.candidate.id;
       if (!candidateMap.has(cid)) {
         candidateMap.set(cid, {
           _id: cid,
-          name: r.candidateId.name,
-          bsgId: r.candidateId.bsgId,
-          section: r.candidateId.section,
-          district: r.candidateId.district,
+          name: r.candidate.name,
+          bsgId: r.candidate.bsgid,
+          section: r.candidate.section,
+          district: r.candidate.district,
           totalScore: 0,
           totalMarksPossible: 0,
           examsTaken: 0,
@@ -395,7 +339,7 @@ export const getLeaderboard = async (req: AuthRequest, res: Response): Promise<v
 
       const stats = candidateMap.get(cid);
       stats.totalScore += r.score;
-      stats.totalMarksPossible += r.totalMarks;
+      stats.totalMarksPossible += r.total_marks;
       stats.examsTaken += 1;
     });
 
@@ -405,16 +349,13 @@ export const getLeaderboard = async (req: AuthRequest, res: Response): Promise<v
         percentage: c.totalMarksPossible > 0 ? ((c.totalScore / c.totalMarksPossible) * 100).toFixed(1) : 0
       }))
       .sort((a, b) => {
-        // Sort by total score, then by percentage
-        if (b.totalScore !== a.totalScore) {
-          return b.totalScore - a.totalScore;
-        }
+        if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
         return Number(b.percentage) - Number(a.percentage);
       });
 
-    res.status(200).json(leaderboard);
+    res.status(200).json(leaderboard); return;
   } catch (error: any) {
-    res.status(500).json({ message: error.message || 'Server error' });
+    res.status(500).json({ message: error.message || 'Server error' }); return;
   }
 };
 
@@ -423,24 +364,11 @@ export const getLeaderboard = async (req: AuthRequest, res: Response): Promise<v
 // @access  Private/Admin
 export const deleteAttempt = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const attemptId = req.params.id;
-    
-    // Find the attempt
-    const attempt = await ExamAttempt.findById(attemptId);
-    if (!attempt) {
-      res.status(404).json({ message: 'Attempt not found' });
-      return;
-    }
-
-    // Delete the associated Result if it exists
-    await Result.deleteOne({ attemptId: attempt._id });
-    
-    // Delete the attempt
-    await attempt.deleteOne();
-
-    res.status(200).json({ message: 'Attempt and associated result deleted successfully' });
+    await supabase.from('results').delete().eq('attempt_id', req.params.id);
+    await supabase.from('exam_attempts').delete().eq('id', req.params.id);
+    res.status(200).json({ message: 'Attempt and associated result deleted successfully' }); return;
   } catch (error: any) {
-    res.status(500).json({ message: error.message || 'Server error' });
+    res.status(500).json({ message: error.message || 'Server error' }); return;
   }
 };
 
@@ -449,58 +377,46 @@ export const deleteAttempt = async (req: AuthRequest, res: Response): Promise<vo
 // @access  Private/Examiner/Admin
 export const getLiveAttempts = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    // Mock user for debug route
-    if (!req.user) {
-      req.user = {
-        _id: '6a56f207145ed3f53293785f', // examiner ID
-        role: 'Examiner'
-      } as any;
-    }
-    const liveAttempts = await ExamAttempt.find({ status: 'In-Progress' })
-      .populate('candidateId', 'name bsgId section district')
-      .populate('examId', 'title creatorId questions')
-      .sort({ updatedAt: -1 });
+    const { data: liveAttempts, error } = await supabase
+      .from('exam_attempts')
+      .select('*, candidate:candidate_id(name, bsgid, section, district), exam:exam_id(title, creator_id, questions(marks))')
+      .eq('status', 'In-Progress')
+      .order('updated_at', { ascending: false });
 
-    const cutoffTime = new Date(Date.now() - 4 * 60 * 60 * 1000); // 4 hours ago
+    if (error) throw error;
+
+    const cutoffTime = new Date(Date.now() - 4 * 60 * 60 * 1000);
     const validAttempts = [];
-    for (const attempt of liveAttempts) {
-      const attemptObj = attempt as any;
-      if (attemptObj.updatedAt && attemptObj.updatedAt < cutoffTime) {
-        // Abandoned attempt: create disqualified result
-        const exam = attempt.examId as any;
-        const totalMarks = exam?.questions?.reduce((acc: number, q: any) => acc + (q.marks || 1), 0) || 0;
-        
-        await Result.create({
-          candidateId: attempt.candidateId,
-          examId: attempt.examId,
-          attemptId: attempt._id,
+    
+    for (const attempt of (liveAttempts || [])) {
+      if (attempt.updated_at && new Date(attempt.updated_at) < cutoffTime) {
+        const totalMarks = attempt.exam?.questions?.reduce((acc: number, q: any) => acc + (q.marks || 1), 0) || 0;
+        await supabase.from('results').insert({
+          candidate_id: attempt.candidate_id,
+          exam_id: attempt.exam_id,
+          attempt_id: attempt.id,
           answers: attempt.answers || [],
           score: 0,
-          totalMarks,
-          violationReason: 'Abandoned due to inactivity',
-          isReleased: true
+          total_marks: totalMarks,
+          violation_reason: 'Abandoned due to inactivity',
+          is_released: true
         });
-
-        // Delete the stuck attempt
-        await ExamAttempt.findByIdAndDelete(attempt._id);
+        await supabase.from('exam_attempts').delete().eq('id', attempt.id);
       } else {
-        validAttempts.push(attempt);
+        validAttempts.push({ ...attempt, _id: attempt.id, candidateId: attempt.candidate, examId: { ...attempt.exam, _id: attempt.exam_id } });
       }
     }
 
     let filteredAttempts = validAttempts;
     if (req.user.role === 'Examiner') {
       filteredAttempts = validAttempts.filter(attempt => {
-        const exam = attempt.examId as any;
-        if (!exam || !exam.creatorId) return false;
-        const examCreatorId = exam.creatorId._id ? exam.creatorId._id.toString() : exam.creatorId.toString();
-        return examCreatorId === req.user._id.toString();
+        return attempt.exam?.creator_id === req.user._id;
       });
     }
 
-    res.status(200).json(filteredAttempts);
+    res.status(200).json(filteredAttempts); return;
   } catch (error: any) {
-    res.status(500).json({ message: error.message || 'Server error' });
+    res.status(500).json({ message: error.message || 'Server error' }); return;
   }
 };
 
@@ -509,23 +425,20 @@ export const getLiveAttempts = async (req: AuthRequest, res: Response): Promise<
 // @access  Private/Examiner/Admin
 export const clearExamResults = async (req: AuthRequest, res: Response): Promise<void> => {
   const { examId } = req.params;
-  
-  const exam = await Exam.findById(examId);
+  const { data: exam } = await supabase.from('exams').select('creator_id').eq('id', examId).single();
   if (!exam) {
-    res.status(404).json({ message: 'Exam not found' });
+    res.status(404).json({ message: 'Exam not found' }); return;
+    return;
+  }
+  if (req.user.role !== 'Admin' && exam.creator_id !== req.user._id) {
+    res.status(403).json({ message: 'Not authorized' }); return;
     return;
   }
   
-  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
-    res.status(403).json({ message: 'Not authorized' });
-    return;
-  }
+  await supabase.from('results').delete().eq('exam_id', examId);
+  await supabase.from('exam_attempts').delete().eq('exam_id', examId);
   
-  // Delete all results and exam attempts for this exam
-  await Result.deleteMany({ examId });
-  await ExamAttempt.deleteMany({ examId });
-  
-  res.status(200).json({ message: 'All results cleared successfully' });
+  res.status(200).json({ message: 'All results cleared successfully' }); return;
 };
 
 // @desc    Delete a specific exam result
@@ -534,23 +447,21 @@ export const clearExamResults = async (req: AuthRequest, res: Response): Promise
 export const deleteExamResult = async (req: AuthRequest, res: Response): Promise<void> => {
   const { resultId } = req.params;
   
-  const result = await Result.findById(resultId).populate('examId');
+  const { data: result } = await supabase.from('results').select('*, exam:exam_id(creator_id)').eq('id', resultId).single();
   if (!result) {
-    res.status(404).json({ message: 'Result not found' });
+    res.status(404).json({ message: 'Result not found' }); return;
     return;
   }
   
-  const exam = result.examId as any;
-  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
-    res.status(403).json({ message: 'Not authorized' });
+  if (req.user.role !== 'Admin' && result.exam?.creator_id !== req.user._id) {
+    res.status(403).json({ message: 'Not authorized' }); return;
     return;
   }
   
-  await Result.findByIdAndDelete(resultId);
-  // Also delete corresponding ExamAttempt to fully clear it
-  await ExamAttempt.findOneAndDelete({ candidateId: result.candidateId, examId: result.examId });
+  await supabase.from('results').delete().eq('id', resultId);
+  await supabase.from('exam_attempts').delete().eq('candidate_id', result.candidate_id).eq('exam_id', result.exam_id);
   
-  res.status(200).json({ message: 'Result deleted successfully' });
+  res.status(200).json({ message: 'Result deleted successfully' }); return;
 };
 
 // @desc    Toggle individual result release
@@ -558,23 +469,12 @@ export const deleteExamResult = async (req: AuthRequest, res: Response): Promise
 // @access  Private/Examiner/Admin
 export const toggleResultRelease = async (req: AuthRequest, res: Response): Promise<void> => {
   const { resultId } = req.params;
+  const { data: result } = await supabase.from('results').select('*, exam:exam_id(creator_id)').eq('id', resultId).single();
+  if (!result) res.status(404).json({ message: 'Result not found' }); return;
+  if (req.user.role !== 'Admin' && result.exam?.creator_id !== req.user._id) res.status(403).json({ message: 'Not authorized' }); return;
   
-  const result = await Result.findById(resultId).populate('examId');
-  if (!result) {
-    res.status(404).json({ message: 'Result not found' });
-    return;
-  }
-  
-  const exam = result.examId as any;
-  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
-    res.status(403).json({ message: 'Not authorized' });
-    return;
-  }
-  
-  result.isReleased = !result.isReleased;
-  await result.save();
-  
-  res.status(200).json(result);
+  const { data: updatedResult } = await supabase.from('results').update({ is_released: !result.is_released }).eq('id', resultId).select().single();
+  res.status(200).json(updatedResult); return;
 };
 
 // @desc    Cancel an active attempt
@@ -583,37 +483,24 @@ export const toggleResultRelease = async (req: AuthRequest, res: Response): Prom
 export const cancelAttempt = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
 
-  const attempt = await ExamAttempt.findById(id).populate('examId');
-  if (!attempt) {
-    res.status(404).json({ message: 'Attempt not found' });
-    return;
-  }
+  const { data: attempt } = await supabase.from('exam_attempts').select('*, exam:exam_id(creator_id, questions(marks))').eq('id', id).single();
+  if (!attempt) res.status(404).json({ message: 'Attempt not found' }); return;
+  if (req.user.role !== 'Admin' && attempt.exam?.creator_id !== req.user._id) res.status(403).json({ message: 'Not authorized' }); return;
 
-  const exam = attempt.examId as any;
-  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
-    res.status(403).json({ message: 'Not authorized' });
-    return;
-  }
+  if (attempt.status !== 'In-Progress') res.status(400).json({ message: 'Can only cancel in-progress attempts' }); return;
 
-  if (attempt.status !== 'In-Progress') {
-    res.status(400).json({ message: 'Can only cancel in-progress attempts' });
-    return;
-  }
-
-  // Create a disqualified Result instead of just deleting
-  const result = await Result.create({
-    candidateId: attempt.candidateId,
-    examId: attempt.examId,
-    attemptId: attempt._id,
+  const totalMarks = attempt.exam?.questions?.reduce((acc: number, q: any) => acc + (q.marks || 1), 0) || 0;
+  const { data: result } = await supabase.from('results').insert({
+    candidate_id: attempt.candidate_id,
+    exam_id: attempt.exam_id,
+    attempt_id: id,
     answers: attempt.answers || [],
     score: 0,
-    totalMarks: exam.questions?.reduce((acc: number, q: any) => acc + (q.marks || 1), 0) || 0,
-    violationReason: 'Cancelled by examiner due to rule violation',
-    isReleased: true // Release immediately so candidate sees it
-  });
+    total_marks: totalMarks,
+    violation_reason: 'Cancelled by examiner due to rule violation',
+    is_released: true
+  }).select().single();
 
-  // Delete the live attempt
-  await ExamAttempt.findByIdAndDelete(id);
-
-  res.status(200).json({ message: 'Attempt cancelled and disqualified successfully', result });
+  await supabase.from('exam_attempts').delete().eq('id', id);
+  res.status(200).json({ message: 'Attempt cancelled and disqualified successfully', result }); return;
 };

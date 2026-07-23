@@ -1,42 +1,51 @@
 import { Request, Response } from 'express';
-import Exam from '../models/Exam';
-import ExamAttempt from '../models/ExamAttempt';
+import { supabase } from '../config/supabase';
 import { AuthRequest } from '../middleware/authMiddleware';
 
 // @desc    Get all exams
 // @route   GET /api/exams
 // @access  Private/Examiner/Admin
 export const getExams = async (req: AuthRequest, res: Response) => {
-  let exams;
-  let examIds: any[] = [];
+  let query = supabase.from('exams').select('*, creator:creator_id(name, email), questions(id)');
   
-  if (req.user.role === 'Admin') {
-    exams = await Exam.find({}).populate('creatorId', 'name email').lean();
-  } else {
-    // Examiner sees only their exams
-    exams = await Exam.find({ creatorId: req.user._id }).populate('creatorId', 'name email').lean();
+  if (req.user.role !== 'Admin') {
+    query = query.eq('creator_id', req.user._id);
   }
   
-  examIds = exams.map(e => e._id);
+  const { data: exams, error } = await query;
+  if (error) res.status(500).json({ message: error.message }); return;
+
+  const examIds = (exams || []).map(e => e.id);
   
-  // Single query to get attempt counts for all these exams
-  const attemptCounts = await ExamAttempt.aggregate([
-    { $match: { examId: { $in: examIds }, status: { $ne: 'In-Progress' } } },
-    { $group: { _id: '$examId', count: { $sum: 1 } } }
-  ]);
+  let attemptCountMap = new Map();
+  if (examIds.length > 0) {
+    const { data: attempts } = await supabase.from('exam_attempts').select('exam_id').in('exam_id', examIds).neq('status', 'In-Progress');
+    if (attempts) {
+      (attempts || []).forEach(a => {
+        attemptCountMap.set(a.exam_id, (attemptCountMap.get(a.exam_id) || 0) + 1);
+      });
+    }
+  }
   
-  const attemptCountMap = new Map();
-  attemptCounts.forEach(item => {
-    attemptCountMap.set(item._id.toString(), item.count);
-  });
-  
-  const formattedExams = exams.map((exam: any) => {
-    return {
-      ...exam,
-      questionCount: exam.questions ? exam.questions.length : 0,
-      attemptCount: attemptCountMap.get(exam._id.toString()) || 0,
-    };
-  });
+  const formattedExams = (exams || []).map((exam: any) => ({
+    ...exam,
+    _id: exam.id,
+    creatorId: exam.creator,
+    questionCount: exam.questions ? exam.questions.length : 0,
+    attemptCount: attemptCountMap.get(exam.id) || 0,
+    durationMinutes: exam.duration_minutes,
+    durationSeconds: exam.duration_seconds,
+    durationUnit: exam.duration_unit,
+    passingMarks: exam.passing_marks,
+    passingCriteriaType: exam.passing_criteria_type,
+    scheduledStartDate: exam.scheduled_start_date,
+    scheduledEndDate: exam.scheduled_end_date,
+    allowMultipleAttempts: exam.allow_multiple_attempts,
+    releaseResultsInstantly: exam.release_results_instantly,
+    issueCertificate: exam.issue_certificate,
+    testKey: exam.test_key,
+    createdAt: exam.created_at,
+  }));
   
   res.json(formattedExams);
 };
@@ -45,32 +54,33 @@ export const getExams = async (req: AuthRequest, res: Response) => {
 // @route   GET /api/exams/available
 // @access  Private
 export const getAvailableExams = async (req: AuthRequest, res: Response) => {
-  const now = new Date();
-  const exams = await Exam.find({
-    $or: [
-      { status: 'Published' },
-      {
-        scheduledStartDate: { $lte: now },
-        scheduledEndDate: { $gte: now },
-      }
-    ]
-  }).populate('creatorId', 'name');
-  const formattedExams = exams.map(exam => {
+  const now = new Date().toISOString();
+  
+  const { data: exams, error } = await supabase
+    .from('exams')
+    .select('*, creator:creator_id(name), questions(marks)')
+    .or(`status.eq.Published,and(scheduled_start_date.lte.${now},scheduled_end_date.gte.${now})`);
+
+  if (error) res.status(500).json({ message: error.message }); return;
+
+  const formattedExams = (exams || []).map(exam => {
     let maxScore = 0;
-    exam.questions.forEach((q: any) => { maxScore += q.marks; });
+    if (exam.questions) {
+      exam.questions.forEach((q: any) => { maxScore += (q.marks || 1); });
+    }
     return {
-      _id: exam._id,
+      _id: exam.id,
       title: exam.title,
       description: exam.description,
-      durationMinutes: exam.durationMinutes,
-      durationSeconds: exam.durationSeconds,
+      durationMinutes: exam.duration_minutes,
+      durationSeconds: exam.duration_seconds,
       status: exam.status,
-      questionCount: exam.questions.length,
+      questionCount: exam.questions ? exam.questions.length : 0,
       maxScore,
-      creatorName: exam.creatorId ? (exam.creatorId as any).name : 'Unknown',
-      scheduledStartDate: exam.scheduledStartDate,
-      scheduledEndDate: exam.scheduledEndDate,
-      createdAt: exam.createdAt,
+      creatorName: exam.creator ? exam.creator.name : 'Unknown',
+      scheduledStartDate: exam.scheduled_start_date,
+      scheduledEndDate: exam.scheduled_end_date,
+      createdAt: exam.created_at,
     };
   });
   res.json(formattedExams);
@@ -82,47 +92,68 @@ export const getAvailableExams = async (req: AuthRequest, res: Response) => {
 export const createExam = async (req: AuthRequest, res: Response) => {
   const { title, description, category, durationMinutes, durationSeconds, durationUnit, passingMarks, passingCriteriaType, scheduledStartDate, scheduledEndDate, allowMultipleAttempts, releaseResultsInstantly, issueCertificate, testKey } = req.body;
 
-  const exam = new Exam({
+  const { data: exam, error } = await supabase.from('exams').insert({
     title,
     description,
     category,
-    durationMinutes: durationMinutes || 0,
-    durationSeconds: durationSeconds || 0,
-    durationUnit: durationUnit || 'min',
-    passingMarks: passingMarks || 50,
-    passingCriteriaType: passingCriteriaType || 'percentage',
-    scheduledStartDate,
-    scheduledEndDate,
-    allowMultipleAttempts: allowMultipleAttempts || false,
-    releaseResultsInstantly: releaseResultsInstantly !== undefined ? releaseResultsInstantly : false,
-    issueCertificate: issueCertificate !== undefined ? issueCertificate : false,
-    testKey,
-    creatorId: req.user._id,
-  });
+    duration_minutes: durationMinutes || 0,
+    duration_seconds: durationSeconds || 0,
+    duration_unit: durationUnit || 'min',
+    passing_marks: passingMarks || 50,
+    passing_criteria_type: passingCriteriaType || 'percentage',
+    scheduled_start_date: scheduledStartDate,
+    scheduled_end_date: scheduledEndDate,
+    allow_multiple_attempts: allowMultipleAttempts || false,
+    release_results_instantly: releaseResultsInstantly !== undefined ? releaseResultsInstantly : false,
+    issue_certificate: issueCertificate !== undefined ? issueCertificate : false,
+    test_key: testKey,
+    creator_id: req.user._id,
+  }).select().single();
 
-  const createdExam = await exam.save();
-  res.status(201).json(createdExam);
+  if (error) res.status(500).json({ message: error.message }); return;
+
+  res.status(201).json({ ...exam, _id: exam.id }); return;
 };
 
 // @desc    Get exam by ID
 // @route   GET /api/exams/:id
 // @access  Private
 export const getExamById = async (req: AuthRequest, res: Response): Promise<void> => {
-  const exam = await Exam.findById(req.params.id).populate('questions.questionId');
+  const { data: exam, error } = await supabase
+    .from('exams')
+    .select('*, questions(*)')
+    .eq('id', req.params.id)
+    .single();
 
-  if (exam) {
-    const examObj = exam.toObject();
-    const hasTestKey = !!examObj.testKey;
-    
-    // Hide testKey if the user is a Candidate
-    if (req.user.role === 'Candidate') {
-      delete examObj.testKey;
-    }
-
-    res.json({ ...examObj, hasTestKey });
-  } else {
-    res.status(404).json({ message: 'Exam not found' });
+  if (error || !exam) {
+    res.status(404).json({ message: 'Exam not found' }); return;
+    return;
   }
+
+  const examObj: any = {
+    ...exam,
+    _id: exam.id,
+    creatorId: exam.creator_id,
+    durationMinutes: exam.duration_minutes,
+    durationSeconds: exam.duration_seconds,
+    durationUnit: exam.duration_unit,
+    passingMarks: exam.passing_marks,
+    passingCriteriaType: exam.passing_criteria_type,
+    scheduledStartDate: exam.scheduled_start_date,
+    scheduledEndDate: exam.scheduled_end_date,
+    allowMultipleAttempts: exam.allow_multiple_attempts,
+    releaseResultsInstantly: exam.release_results_instantly,
+    issueCertificate: exam.issue_certificate,
+    testKey: exam.test_key,
+    questions: exam.questions.map((q: any) => ({ ...q, _id: q.id, questionId: { ...q, _id: q.id } }))
+  };
+
+  const hasTestKey = !!examObj.testKey;
+  if (req.user.role === 'Candidate') {
+    delete examObj.testKey;
+  }
+
+  res.json({ ...examObj, hasTestKey });
 };
 
 // @desc    Update exam status
@@ -133,26 +164,27 @@ export const updateExamStatus = async (req: AuthRequest, res: Response): Promise
   const { status } = req.body;
 
   if (!['Draft', 'Published', 'Archived'].includes(status)) {
-    res.status(400).json({ message: 'Invalid status' });
+    res.status(400).json({ message: 'Invalid status' }); return;
     return;
   }
 
-  const exam = await Exam.findById(id);
-
+  const { data: exam } = await supabase.from('exams').select('creator_id').eq('id', id).single();
   if (!exam) {
-    res.status(404).json({ message: 'Exam not found' });
+    res.status(404).json({ message: 'Exam not found' }); return;
     return;
   }
 
-  // Authorization check
-  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
-    res.status(403).json({ message: 'Not authorized to update this exam' });
+  if (req.user.role !== 'Admin' && exam.creator_id !== req.user._id) {
+    res.status(403).json({ message: 'Not authorized to update this exam' }); return;
     return;
   }
 
-  exam.status = status;
-  await exam.save();
-  res.json({ message: 'Status updated', exam });
+  const { data: updatedExam, error } = await supabase.from('exams').update({ status }).eq('id', id).select().single();
+  if (error) {
+     res.status(500).json({ message: error.message }); return;
+     return;
+  }
+  res.json({ message: 'Status updated', exam: { ...updatedExam, _id: updatedExam.id } });
 };
 
 // @desc    Update exam details
@@ -162,36 +194,37 @@ export const updateExam = async (req: AuthRequest, res: Response): Promise<void>
   const { id } = req.params;
   const { title, description, category, durationMinutes, durationSeconds, durationUnit, passingMarks, passingCriteriaType, scheduledStartDate, scheduledEndDate, allowMultipleAttempts, releaseResultsInstantly, issueCertificate, testKey } = req.body;
 
-  const exam = await Exam.findById(id);
-
+  const { data: exam } = await supabase.from('exams').select('creator_id').eq('id', id).single();
   if (!exam) {
-    res.status(404).json({ message: 'Exam not found' });
+    res.status(404).json({ message: 'Exam not found' }); return;
     return;
   }
 
-  // Authorization check
-  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
-    res.status(403).json({ message: 'Not authorized to update this exam' });
+  if (req.user.role !== 'Admin' && exam.creator_id !== req.user._id) {
+    res.status(403).json({ message: 'Not authorized to update this exam' }); return;
     return;
   }
 
-  if (title) exam.title = title;
-  if (description !== undefined) exam.description = description;
-  if (category !== undefined) exam.category = category;
-  if (durationMinutes !== undefined) exam.durationMinutes = durationMinutes;
-  if (durationSeconds !== undefined) exam.durationSeconds = durationSeconds;
-  if (durationUnit) exam.durationUnit = durationUnit;
-  if (passingMarks !== undefined) exam.passingMarks = passingMarks;
-  if (passingCriteriaType !== undefined) exam.passingCriteriaType = passingCriteriaType;
-  if (scheduledStartDate !== undefined) exam.scheduledStartDate = scheduledStartDate || null;
-  if (scheduledEndDate !== undefined) exam.scheduledEndDate = scheduledEndDate || null;
-  if (allowMultipleAttempts !== undefined) exam.allowMultipleAttempts = allowMultipleAttempts;
-  if (releaseResultsInstantly !== undefined) exam.releaseResultsInstantly = releaseResultsInstantly;
-  if (issueCertificate !== undefined) exam.issueCertificate = issueCertificate;
-  if (testKey !== undefined) exam.testKey = testKey;
+  const updates: any = {};
+  if (title) updates.title = title;
+  if (description !== undefined) updates.description = description;
+  if (category !== undefined) updates.category = category;
+  if (durationMinutes !== undefined) updates.duration_minutes = durationMinutes;
+  if (durationSeconds !== undefined) updates.duration_seconds = durationSeconds;
+  if (durationUnit) updates.duration_unit = durationUnit;
+  if (passingMarks !== undefined) updates.passing_marks = passingMarks;
+  if (passingCriteriaType !== undefined) updates.passing_criteria_type = passingCriteriaType;
+  if (scheduledStartDate !== undefined) updates.scheduled_start_date = scheduledStartDate || null;
+  if (scheduledEndDate !== undefined) updates.scheduled_end_date = scheduledEndDate || null;
+  if (allowMultipleAttempts !== undefined) updates.allow_multiple_attempts = allowMultipleAttempts;
+  if (releaseResultsInstantly !== undefined) updates.release_results_instantly = releaseResultsInstantly;
+  if (issueCertificate !== undefined) updates.issue_certificate = issueCertificate;
+  if (testKey !== undefined) updates.test_key = testKey;
 
-  await exam.save();
-  res.json({ message: 'Exam updated', exam });
+  const { data: updatedExam, error } = await supabase.from('exams').update(updates).eq('id', id).select().single();
+  if (error) res.status(500).json({ message: error.message }); return;
+
+  res.json({ message: 'Exam updated', exam: { ...updatedExam, _id: updatedExam.id } });
 };
 
 // @desc    Delete exam
@@ -200,25 +233,23 @@ export const updateExam = async (req: AuthRequest, res: Response): Promise<void>
 export const deleteExam = async (req: AuthRequest, res: Response): Promise<void> => {
   const { id } = req.params;
 
-  const exam = await Exam.findById(id);
-
+  const { data: exam } = await supabase.from('exams').select('creator_id').eq('id', id).single();
   if (!exam) {
-    res.status(404).json({ message: 'Exam not found' });
+    res.status(404).json({ message: 'Exam not found' }); return;
     return;
   }
 
-  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
-    res.status(403).json({ message: 'Not authorized to delete this exam' });
+  if (req.user.role !== 'Admin' && exam.creator_id !== req.user._id) {
+    res.status(403).json({ message: 'Not authorized to delete this exam' }); return;
     return;
   }
   
-  // Security Fix: Prevent deletion if there are active candidates
-  const activeAttempts = await ExamAttempt.findOne({ examId: id, status: 'In-Progress' });
-  if (activeAttempts) {
-    res.status(400).json({ message: 'Cannot delete this exam because candidates are currently taking it.' });
+  const { data: activeAttempts } = await supabase.from('exam_attempts').select('id').eq('exam_id', id).eq('status', 'In-Progress').limit(1);
+  if (activeAttempts && activeAttempts.length > 0) {
+    res.status(400).json({ message: 'Cannot delete this exam because candidates are currently taking it.' }); return;
     return;
   }
 
-  await Exam.findByIdAndDelete(id);
+  await supabase.from('exams').delete().eq('id', id);
   res.json({ message: 'Exam removed successfully' });
 };

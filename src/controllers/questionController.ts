@@ -1,14 +1,10 @@
 import { Request, Response } from 'express';
-import Question from '../models/Question';
-import Exam from '../models/Exam';
+import { supabase } from '../config/supabase';
 import { AuthRequest } from '../middleware/authMiddleware';
 import { generateAIContent } from '../utils/aiService';
 
 const pdfParse = require('pdf-parse');
 import mammoth from 'mammoth';
-
-// We initialize inside the function so it doesn't crash on startup if the key is missing
-
 import fs from 'fs';
 import path from 'path';
 
@@ -20,16 +16,16 @@ export const addQuestion = async (req: AuthRequest, res: Response): Promise<void
   let { text, options, correctOptionIndex, category, section, translations, marks, type, acceptableAnswers, textHindi, optionsHindi } = req.body;
   let mediaUrl = req.body.mediaUrl;
 
-  const exam = await Exam.findById(examId);
+  const { data: exam, error: examError } = await supabase.from('exams').select('creator_id').eq('id', examId).single();
 
-  if (!exam) {
-    res.status(404).json({ message: 'Exam not found' });
+  if (examError || !exam) {
+    res.status(404).json({ message: 'Exam not found' }); return;
     return;
   }
 
   // Authorization check (Admin or creator)
-  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
-    res.status(403).json({ message: 'Not authorized to add questions to this exam' });
+  if (req.user.role !== 'Admin' && exam.creator_id !== req.user._id) {
+    res.status(403).json({ message: 'Not authorized to add questions to this exam' }); return;
     return;
   }
 
@@ -49,39 +45,37 @@ export const addQuestion = async (req: AuthRequest, res: Response): Promise<void
   if (typeof options === 'string') options = JSON.parse(options);
   if (typeof acceptableAnswers === 'string') acceptableAnswers = JSON.parse(acceptableAnswers);
   if (typeof translations === 'string') translations = JSON.parse(translations);
+  if (typeof optionsHindi === 'string') optionsHindi = JSON.parse(optionsHindi);
 
   // Duplicate Protection Check
-  const existing = await Question.findOne({ examId, text });
+  const { data: existing } = await supabase.from('questions').select('id').eq('exam_id', examId).eq('text', text).maybeSingle();
   if (existing) {
-    res.status(400).json({ message: 'A question with this exact text already exists in this exam.' });
+    res.status(400).json({ message: 'A question with this exact text already exists in this exam.' }); return;
     return;
   }
 
-  const question = new Question({
-    examId,
+  const { data: createdQuestion, error: qError } = await supabase.from('questions').insert({
+    exam_id: examId,
     text,
     options: options || [],
-    correctOptionIndex: correctOptionIndex ? Number(correctOptionIndex) : undefined,
-    acceptableAnswers: acceptableAnswers || [],
+    correct_option_index: correctOptionIndex ? Number(correctOptionIndex) : 0,
+    acceptable_answers: acceptableAnswers || [],
     category,
     section,
     translations,
     type,
-    mediaUrl,
-    textHindi,
-    optionsHindi: optionsHindi ? (typeof optionsHindi === 'string' ? JSON.parse(optionsHindi) : optionsHindi) : undefined,
-  });
+    media_url: mediaUrl,
+    text_hindi: textHindi,
+    options_hindi: optionsHindi,
+    marks: marks || 1
+  }).select().single();
 
-  const createdQuestion = await question.save();
+  if (qError) {
+    res.status(500).json({ message: qError.message }); return;
+    return;
+  }
 
-  exam.questions.push({
-    questionId: createdQuestion._id as any,
-    marks: marks || 1,
-  });
-
-  await exam.save();
-
-  res.status(201).json(createdQuestion);
+  res.status(201).json({ ...createdQuestion, _id: createdQuestion.id }); return;
 };
 
 // @desc    Import questions via AI (PDF/Docx text content extraction)
@@ -92,19 +86,17 @@ export const importQuestions = async (req: AuthRequest, res: Response): Promise<
   const file = req.file;
 
   if (!file) {
-    res.status(400).json({ message: 'No file uploaded' });
+    res.status(400).json({ message: 'No file uploaded' }); return;
     return;
   }
 
-  const exam = await Exam.findById(examId);
-
+  const { data: exam } = await supabase.from('exams').select('creator_id').eq('id', examId).single();
   if (!exam) {
-    res.status(404).json({ message: 'Exam not found' });
+    res.status(404).json({ message: 'Exam not found' }); return;
     return;
   }
-
-  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
-    res.status(403).json({ message: 'Not authorized to add questions to this exam' });
+  if (req.user.role !== 'Admin' && exam.creator_id !== req.user._id) {
+    res.status(403).json({ message: 'Not authorized to add questions to this exam' }); return;
     return;
   }
 
@@ -126,7 +118,7 @@ CRITICAL INSTRUCTIONS:
 - "correctOptionIndex": The 0-based index of the correct option (must match for both languages).
 - "category": A guessed category based on the question (e.g. "Scouting", "First Aid", "Knots").
 
-IMPORTANT HINDI ENCODING RULE: If the original Hindi text looks like gibberish or uses legacy font encoding (e.g., 'ĤगǓत' instead of 'प्रगति', or 'धम[' instead of 'धर्म', or 'मानव शरȣर' instead of 'मानव शरीर'), DO NOT return the broken text! Instead, completely ignore the broken Hindi and accurately translate the English question back to standard Unicode Hindi.
+IMPORTANT HINDI ENCODING RULE: If the original Hindi text looks like gibberish or uses legacy font encoding, DO NOT return the broken text! Instead, completely ignore the broken Hindi and accurately translate the English question back to standard Unicode Hindi.
 `;
 
     if (mimeType.startsWith('image/')) {
@@ -147,20 +139,17 @@ IMPORTANT HINDI ENCODING RULE: If the original Hindi text looks like gibberish o
         const docxData = await mammoth.extractRawText({ buffer: file.buffer });
         fileContent = docxData.value;
       } else {
-        // Fallback to text
         fileContent = file.buffer.toString('utf-8');
       }
       
       if (!fileContent || fileContent.trim() === '') {
-        res.status(400).json({ message: 'Could not extract text from the file.' });
+        res.status(400).json({ message: 'Could not extract text from the file.' }); return;
         return;
       }
-
       contentsPayload = `${fileContent}`;
     }
 
     if (!process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY_2 && !process.env.OPENAI_API_KEY && !process.env.GROQ_API_KEY) {
-      // Return a mock parsed question instead of throwing an error if NO keys exist
       const mockQuestions = [
         {
           text: "Sample AI Extracted Question from Document?",
@@ -172,29 +161,21 @@ IMPORTANT HINDI ENCODING RULE: If the original Hindi text looks like gibberish o
       
       const createdQuestions = [];
       for (const q of mockQuestions) {
-        const question = new Question({
-          examId,
+        const { data: savedQ } = await supabase.from('questions').insert({
+          exam_id: examId,
           text: q.text,
           options: q.options,
-          correctOptionIndex: q.correctOptionIndex,
+          correct_option_index: q.correctOptionIndex,
           category: q.category,
-        });
-        const savedQ = await question.save();
+          marks: 1
+        }).select().single();
         createdQuestions.push(savedQ);
-        
-        exam.questions.push({
-          questionId: savedQ._id as any,
-          marks: 1,
-        });
       }
-      await exam.save();
-      res.status(201).json({ message: 'Questions imported successfully (Mock data used since no AI keys are missing)', count: createdQuestions.length });
+      res.status(201).json({ message: 'Questions imported successfully (Mock data used since no AI keys are missing)', count: createdQuestions.length }); return;
       return;
     }
 
     let allParsedQuestions: any[] = [];
-    let hasError = false;
-    let errorMsg = '';
 
     try {
       if (mimeType.startsWith('image/')) {
@@ -216,10 +197,9 @@ IMPORTANT HINDI ENCODING RULE: If the original Hindi text looks like gibberish o
           allParsedQuestions.push(...questionArray);
         }
       } else {
-        // Chunking for large text files (PDF, DOCX, TXT)
         let chunks = [];
         let currentChunk = '';
-        const MAX_LENGTH = 3500; // Optimal chunk size for LLM output limits
+        const MAX_LENGTH = 3500; 
         
         const lines = fileContent.split('\n');
         for (const line of lines) {
@@ -232,7 +212,6 @@ IMPORTANT HINDI ENCODING RULE: If the original Hindi text looks like gibberish o
         }
         if (currentChunk.trim()) chunks.push(currentChunk);
 
-        // Process chunks sequentially
         for (const chunk of chunks) {
           if (!chunk.trim()) continue;
           const aiText = await generateAIContent({
@@ -256,12 +235,12 @@ IMPORTANT HINDI ENCODING RULE: If the original Hindi text looks like gibberish o
       }
     } catch (err: any) {
       console.error('AI Generation Error:', err);
-      res.status(500).json({ message: 'AI failed to process the document: ' + err.message });
+      res.status(500).json({ message: 'AI failed to process the document: ' + err.message }); return;
       return;
     }
     
     if (allParsedQuestions.length === 0) {
-      res.status(500).json({ message: 'AI did not return a valid list of questions. The document might be unreadable.' });
+      res.status(500).json({ message: 'AI did not return a valid list of questions. The document might be unreadable.' }); return;
       return;
     }
 
@@ -269,33 +248,25 @@ IMPORTANT HINDI ENCODING RULE: If the original Hindi text looks like gibberish o
     let duplicatesSkipped = 0;
 
     for (const q of allParsedQuestions) {
-      // Duplicate Protection Check
-      const existing = await Question.findOne({ examId, text: q.text });
+      const { data: existing } = await supabase.from('questions').select('id').eq('exam_id', examId).eq('text', q.text).maybeSingle();
       if (existing) {
         duplicatesSkipped++;
         continue;
       }
 
-      const question = new Question({
-        examId,
+      const { data: savedQ } = await supabase.from('questions').insert({
+        exam_id: examId,
         text: q.text,
         options: q.options,
-        textHindi: q.textHindi,
-        optionsHindi: q.optionsHindi,
-        correctOptionIndex: q.correctOptionIndex,
+        text_hindi: q.textHindi,
+        options_hindi: q.optionsHindi,
+        correct_option_index: q.correctOptionIndex,
         category: q.category,
-      });
-      const savedQ = await question.save();
+        marks: 1
+      }).select().single();
       createdQuestions.push(savedQ);
-      
-      exam.questions.push({
-        questionId: savedQ._id as any,
-        marks: 1,
-      });
     }
 
-    await exam.save();
-    
     let msg = `Successfully imported ${createdQuestions.length} questions.`;
     if (duplicatesSkipped > 0) {
       msg += ` Skipped ${duplicatesSkipped} duplicates.`;
@@ -308,12 +279,10 @@ IMPORTANT HINDI ENCODING RULE: If the original Hindi text looks like gibberish o
     });
   } catch (error: any) {
     console.error('Error importing questions:', error);
-    res.status(500).json({ message: 'Error parsing questions with AI: ' + (error?.message || error) });
+    res.status(500).json({ message: 'Error parsing questions with AI: ' + (error?.message || error) }); return;
   }
 };
 
-import ExamAttempt from '../models/ExamAttempt';
-import Result from '../models/Result';
 
 // @desc    Edit a question
 // @route   PUT /api/exams/:examId/questions/:questionId
@@ -323,26 +292,23 @@ export const editQuestion = async (req: AuthRequest, res: Response): Promise<voi
   let { text, options, correctOptionIndex, category, section, translations, type, acceptableAnswers } = req.body;
   let mediaUrl = req.body.mediaUrl;
 
-  const exam = await Exam.findById(examId);
-
+  const { data: exam } = await supabase.from('exams').select('creator_id').eq('id', examId).single();
   if (!exam) {
-    res.status(404).json({ message: 'Exam not found' });
+    res.status(404).json({ message: 'Exam not found' }); return;
     return;
   }
 
-  // Authorization check
-  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
-    res.status(403).json({ message: 'Not authorized' });
+  if (req.user.role !== 'Admin' && exam.creator_id !== req.user._id) {
+    res.status(403).json({ message: 'Not authorized' }); return;
     return;
   }
 
-  const question = await Question.findById(questionId);
+  const { data: question } = await supabase.from('questions').select('*').eq('id', questionId).single();
   if (!question) {
-    res.status(404).json({ message: 'Question not found' });
+    res.status(404).json({ message: 'Question not found' }); return;
     return;
   }
 
-  // Handle local file upload for updating media
   if (req.file) {
     const uploadDir = path.join(process.cwd(), 'public/uploads');
     if (!fs.existsSync(uploadDir)) {
@@ -359,71 +325,59 @@ export const editQuestion = async (req: AuthRequest, res: Response): Promise<voi
   if (typeof translations === 'string') translations = JSON.parse(translations);
   if (typeof req.body.optionsHindi === 'string') req.body.optionsHindi = JSON.parse(req.body.optionsHindi);
 
-  question.text = text || question.text;
-  question.options = options || question.options;
+  const updates: any = {};
+  if (text) updates.text = text;
+  if (options) updates.options = options;
   
-  let oldCorrectIndex = question.correctOptionIndex;
+  let oldCorrectIndex = question.correct_option_index;
   let triggeredReevaluation = false;
   if (correctOptionIndex !== undefined) {
     const newCorrectIndex = Number(correctOptionIndex);
     if (newCorrectIndex !== oldCorrectIndex) {
       triggeredReevaluation = true;
     }
-    question.correctOptionIndex = newCorrectIndex;
+    updates.correct_option_index = newCorrectIndex;
   }
   
-  question.acceptableAnswers = acceptableAnswers || question.acceptableAnswers;
-  question.category = category || question.category;
-  question.textHindi = req.body.textHindi !== undefined ? req.body.textHindi : question.textHindi;
-  question.optionsHindi = req.body.optionsHindi !== undefined ? req.body.optionsHindi : question.optionsHindi;
-  question.type = type || question.type;
-  if (mediaUrl !== undefined) question.mediaUrl = mediaUrl;
+  if (acceptableAnswers) updates.acceptable_answers = acceptableAnswers;
+  if (category) updates.category = category;
+  if (req.body.textHindi !== undefined) updates.text_hindi = req.body.textHindi;
+  if (req.body.optionsHindi !== undefined) updates.options_hindi = req.body.optionsHindi;
+  if (type) updates.type = type;
+  if (mediaUrl !== undefined) updates.media_url = mediaUrl;
 
-  const updatedQuestion = await question.save();
+  const { data: updatedQuestion, error } = await supabase.from('questions').update(updates).eq('id', questionId).select().single();
+  if (error) {
+     res.status(500).json({ message: error.message }); return;
+     return;
+  }
   
   if (triggeredReevaluation) {
     // Dynamic Re-evaluation Logic
-    // Find all submitted attempts for this exam
-    const submittedAttempts = await ExamAttempt.find({ 
-      examId, 
-      status: { $in: ['Submitted', 'Auto-Submitted'] } 
-    });
+    const { data: submittedAttempts } = await supabase.from('exam_attempts').select('*').eq('exam_id', examId).in('status', ['Submitted', 'Auto-Submitted']);
+    const { data: allQuestions } = await supabase.from('questions').select('*').eq('exam_id', examId);
     
-    // Also need to fetch all questions for this exam to re-calculate score
-    const fullExam = await Exam.findById(examId).populate('questions.questionId');
-    
-    if (fullExam && submittedAttempts.length > 0) {
+    if (allQuestions && submittedAttempts && submittedAttempts.length > 0) {
       for (const attempt of submittedAttempts) {
         let score = 0;
         let totalMarks = 0;
         
-        attempt.answers.forEach((ans) => {
-          const examQuestion = fullExam.questions.find(
-            (q: any) => q.questionId && q.questionId._id.toString() === ans.questionId.toString()
-          );
-          if (examQuestion && examQuestion.questionId) {
-            totalMarks += examQuestion.marks;
-            const correctIndex = (examQuestion.questionId as any).correctOptionIndex;
-            if (
-              ans.selectedOptionIndex !== undefined &&
-              ans.selectedOptionIndex !== null &&
-              ans.selectedOptionIndex === correctIndex
-            ) {
-              score += examQuestion.marks;
+        attempt.answers.forEach((ans: any) => {
+          const examQuestion = allQuestions.find(q => q.id === ans.questionId);
+          if (examQuestion) {
+            totalMarks += (examQuestion.marks || 1);
+            if (ans.selectedOptionIndex !== undefined && ans.selectedOptionIndex !== null && ans.selectedOptionIndex === examQuestion.correct_option_index) {
+              score += (examQuestion.marks || 1);
             }
           }
         });
         
-        // Update the result document
-        await Result.updateOne(
-          { attemptId: attempt._id },
-          { $set: { score, totalMarks } }
-        );
+        await supabase.from('results').update({ score, total_marks: totalMarks }).eq('attempt_id', attempt.id);
       }
     }
   }
 
-  res.status(200).json(updatedQuestion);
+  res.status(200).json({ ...updatedQuestion, _id: updatedQuestion.id }); return;
 };
 
 // @desc    Delete all questions for an exam
@@ -432,34 +386,26 @@ export const editQuestion = async (req: AuthRequest, res: Response): Promise<voi
 export const deleteAllQuestions = async (req: AuthRequest, res: Response): Promise<void> => {
   const { examId } = req.params;
 
-  const exam = await Exam.findById(examId);
-
+  const { data: exam } = await supabase.from('exams').select('creator_id').eq('id', examId).single();
   if (!exam) {
-    res.status(404).json({ message: 'Exam not found' });
+    res.status(404).json({ message: 'Exam not found' }); return;
     return;
   }
 
-  // Authorization check
-  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
-    res.status(403).json({ message: 'Not authorized' });
+  if (req.user.role !== 'Admin' && exam.creator_id !== req.user._id) {
+    res.status(403).json({ message: 'Not authorized' }); return;
     return;
   }
   
-  // Security Fix: Prevent deletion if there are active candidates
-  const activeAttempts = await ExamAttempt.findOne({ examId: examId, status: 'In-Progress' });
-  if (activeAttempts) {
-    res.status(400).json({ message: 'Cannot delete questions while candidates are currently taking the exam.' });
+  const { data: activeAttempts } = await supabase.from('exam_attempts').select('id').eq('exam_id', examId).eq('status', 'In-Progress').limit(1);
+  if (activeAttempts && activeAttempts.length > 0) {
+    res.status(400).json({ message: 'Cannot delete questions while candidates are currently taking the exam.' }); return;
     return;
   }
 
-  // Delete all questions associated with this exam from Question collection
-  await Question.deleteMany({ examId: examId });
+  await supabase.from('questions').delete().eq('exam_id', examId);
 
-  // Clear questions array in Exam document
-  exam.questions = [];
-  await exam.save();
-
-  res.status(200).json({ message: 'All questions deleted successfully' });
+  res.status(200).json({ message: 'All questions deleted successfully' }); return;
 };
 
 // @desc    Delete a question
@@ -468,39 +414,26 @@ export const deleteAllQuestions = async (req: AuthRequest, res: Response): Promi
 export const deleteQuestion = async (req: AuthRequest, res: Response): Promise<void> => {
   const { examId, questionId } = req.params;
 
-  const exam = await Exam.findById(examId);
-
+  const { data: exam } = await supabase.from('exams').select('creator_id').eq('id', examId).single();
   if (!exam) {
-    res.status(404).json({ message: 'Exam not found' });
+    res.status(404).json({ message: 'Exam not found' }); return;
     return;
   }
 
-  // Authorization check
-  if (req.user.role !== 'Admin' && exam.creatorId.toString() !== req.user._id.toString()) {
-    res.status(403).json({ message: 'Not authorized' });
+  if (req.user.role !== 'Admin' && exam.creator_id !== req.user._id) {
+    res.status(403).json({ message: 'Not authorized' }); return;
     return;
   }
   
-  // Security Fix: Prevent deletion if there are active candidates
-  const activeAttempts = await ExamAttempt.findOne({ examId: examId, status: 'In-Progress' });
-  if (activeAttempts) {
-    res.status(400).json({ message: 'Cannot delete questions while candidates are currently taking the exam.' });
+  const { data: activeAttempts } = await supabase.from('exam_attempts').select('id').eq('exam_id', examId).eq('status', 'In-Progress').limit(1);
+  if (activeAttempts && activeAttempts.length > 0) {
+    res.status(400).json({ message: 'Cannot delete questions while candidates are currently taking the exam.' }); return;
     return;
   }
 
-  const question = await Question.findById(questionId);
-  if (!question) {
-    res.status(404).json({ message: 'Question not found' });
-    return;
-  }
+  await supabase.from('questions').delete().eq('id', questionId);
 
-  // Remove from exam questions array
-  exam.questions = exam.questions.filter((q: any) => q.questionId.toString() !== questionId);
-  await exam.save();
-
-  await Question.findByIdAndDelete(questionId);
-
-  res.status(200).json({ message: 'Question removed successfully' });
+  res.status(200).json({ message: 'Question removed successfully' }); return;
 };
 
 // @desc    Auto translate text
@@ -509,12 +442,12 @@ export const deleteQuestion = async (req: AuthRequest, res: Response): Promise<v
 export const autoTranslate = async (req: AuthRequest, res: Response): Promise<void> => {
   const { text, targetLanguage = 'Hindi' } = req.body;
   if (!text) {
-    res.status(400).json({ message: 'No text provided' });
+    res.status(400).json({ message: 'No text provided' }); return;
     return;
   }
   
   if (!process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY_2 && !process.env.OPENAI_API_KEY && !process.env.GROQ_API_KEY) {
-    res.status(200).json({ translatedText: text + ` (Translation API missing)` });
+    res.status(200).json({ translatedText: text + ` (Translation API missing)` }); return;
     return;
   }
   
@@ -522,10 +455,8 @@ export const autoTranslate = async (req: AuthRequest, res: Response): Promise<vo
     const aiText = await generateAIContent({
       userPrompt: `Translate the following text to ${targetLanguage}. Only return the translated ${targetLanguage} text without any formatting, quotes, or markdown. Text to translate:\n\n${text}`
     });
-    res.status(200).json({ translatedText: aiText?.trim() });
+    res.status(200).json({ translatedText: aiText?.trim() }); return;
   } catch (error: any) {
-    console.error('Translation error:', error);
-    res.status(500).json({ message: 'Translation failed: ' + (error?.message || error) });
+    res.status(500).json({ message: 'Translation failed: ' + (error?.message || error) }); return;
   }
 };
-

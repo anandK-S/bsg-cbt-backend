@@ -1,14 +1,18 @@
 import { Request, Response } from 'express';
-import User from '../models/User';
-import AuditLog from '../models/AuditLog';
+import { supabase } from '../config/supabase';
 import { AuthRequest } from '../middleware/authMiddleware';
 
 // @desc    Get all users
 // @route   GET /api/users
 // @access  Private/Admin
 export const getUsers = async (req: AuthRequest, res: Response) => {
-  const users = await User.find({}).select('-passwordHash');
-  res.json(users);
+  const { data: users, error } = await supabase.from('profiles').select('*');
+  if (error) {
+    res.status(500).json({ message: error.message }); return;
+    return;
+  }
+  const formattedUsers = users.map(u => ({ ...u, _id: u.id }));
+  res.json(formattedUsers);
 };
 
 // @desc    Get audit logs
@@ -16,13 +20,24 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
 // @access  Private/Admin
 export const getAuditLogs = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const logs = await AuditLog.find({})
-      .populate('userId', 'name email role')
-      .sort({ timestamp: -1 })
-      .limit(1000); // Limit to latest 1000 for performance
-    res.json(logs);
+    const { data: logs, error } = await supabase
+      .from('audit_logs')
+      .select('*, profiles:user_id(name, email, role)')
+      .order('timestamp', { ascending: false })
+      .limit(1000);
+
+    if (error) throw error;
+    
+    const formattedLogs = logs.map(log => ({
+      _id: log.id,
+      userId: log.profiles ? { ...log.profiles, _id: log.user_id } : { _id: log.user_id },
+      action: log.action,
+      details: log.details,
+      timestamp: log.timestamp
+    }));
+    res.json(formattedLogs);
   } catch (error: any) {
-    res.status(500).json({ message: error.message || 'Server error' });
+    res.status(500).json({ message: error.message || 'Server error' }); return;
   }
 };
 
@@ -30,14 +45,12 @@ export const getAuditLogs = async (req: AuthRequest, res: Response): Promise<voi
 // @route   PUT /api/users/:id/block
 // @access  Private/Admin
 export const blockUser = async (req: AuthRequest, res: Response): Promise<void> => {
-  const user = await User.findById(req.params.id);
+  const { data: user, error } = await supabase.from('profiles').update({ status: 'Blocked' }).eq('id', req.params.id).select().single();
 
   if (user) {
-    user.status = 'Blocked';
-    const updatedUser = await user.save();
-    res.json({ message: 'User blocked', user: updatedUser });
+    res.json({ message: 'User blocked', user: { ...user, _id: user.id } });
   } else {
-    res.status(404).json({ message: 'User not found' });
+    res.status(404).json({ message: 'User not found' }); return;
   }
 };
 
@@ -45,14 +58,12 @@ export const blockUser = async (req: AuthRequest, res: Response): Promise<void> 
 // @route   PUT /api/users/:id/unblock
 // @access  Private/Admin
 export const unblockUser = async (req: AuthRequest, res: Response): Promise<void> => {
-  const user = await User.findById(req.params.id);
+  const { data: user, error } = await supabase.from('profiles').update({ status: 'Active' }).eq('id', req.params.id).select().single();
 
   if (user) {
-    user.status = 'Active';
-    const updatedUser = await user.save();
-    res.json({ message: 'User unblocked', user: updatedUser });
+    res.json({ message: 'User unblocked', user: { ...user, _id: user.id } });
   } else {
-    res.status(404).json({ message: 'User not found' });
+    res.status(404).json({ message: 'User not found' }); return;
   }
 };
 
@@ -60,15 +71,15 @@ export const unblockUser = async (req: AuthRequest, res: Response): Promise<void
 // @route   PUT /api/users/:id/unlock
 // @access  Private/Admin
 export const unlockUser = async (req: AuthRequest, res: Response): Promise<void> => {
-  const user = await User.findById(req.params.id);
+  const { data: user, error } = await supabase.from('profiles').update({ 
+    failed_login_attempts: 0, 
+    locked_until: null 
+  }).eq('id', req.params.id).select().single();
 
   if (user) {
-    user.failedLoginAttempts = 0;
-    user.lockedUntil = undefined;
-    const updatedUser = await user.save();
-    res.json({ message: 'User account unlocked', user: updatedUser });
+    res.json({ message: 'User account unlocked', user: { ...user, _id: user.id } });
   } else {
-    res.status(404).json({ message: 'User not found' });
+    res.status(404).json({ message: 'User not found' }); return;
   }
 };
 
@@ -77,26 +88,24 @@ export const unlockUser = async (req: AuthRequest, res: Response): Promise<void>
 // @access  Private/Admin
 export const changeUserPassword = async (req: Request, res: Response): Promise<void> => {
   try {
-    const user = await User.findById(req.params.id);
     const { newPassword } = req.body;
-
-    if (!user) {
-      res.status(404).json({ message: 'User not found' });
-      return;
-    }
 
     const passwordRegex = /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{6,}$/;
     if (!newPassword || !passwordRegex.test(newPassword)) {
-      res.status(400).json({ message: 'Password must be at least 6 characters and contain a letter, a number, and a special character.' });
+      res.status(400).json({ message: 'Password must be at least 6 characters and contain a letter, a number, and a special character.' }); return;
       return;
     }
 
-    user.passwordHash = newPassword; // Will be hashed by pre-save hook
-    await user.save();
+    const { error } = await supabase.auth.admin.updateUserById(req.params.id as string, { password: newPassword });
+
+    if (error) {
+      res.status(400).json({ message: error.message }); return;
+      return;
+    }
 
     res.json({ message: 'Password updated successfully' });
   } catch (error: any) {
-    res.status(500).json({ message: error.message || 'Server error' });
+    res.status(500).json({ message: error.message || 'Server error' }); return;
   }
 };
 
@@ -105,39 +114,47 @@ export const changeUserPassword = async (req: Request, res: Response): Promise<v
 // @access  Private/Admin
 export const deleteUser = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const adminUser = await User.findById(req.user?._id);
     const { adminPassword } = req.body;
 
-    if (!adminUser) {
-      res.status(401).json({ message: 'Admin not found' });
-      return;
-    }
-
     if (!adminPassword) {
-      res.status(400).json({ message: 'Admin password is required to delete a user permanently' });
+      res.status(400).json({ message: 'Admin password is required to delete a user permanently' }); return;
       return;
     }
 
-    const isMatch = await adminUser.matchPassword(adminPassword);
-    if (!isMatch) {
-      res.status(401).json({ message: 'Invalid admin password. Deletion aborted.' });
+    // Verify admin password by attempting to sign in
+    if (!req.user || !req.user.email) {
+      res.status(401).json({ message: 'Admin not found' }); return;
       return;
     }
 
-    const userToDelete = await User.findById(req.params.id);
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+      email: req.user.email,
+      password: adminPassword,
+    });
+
+    if (signInError || !signInData.user) {
+      res.status(401).json({ message: 'Invalid admin password. Deletion aborted.' }); return;
+      return;
+    }
+
+    const { data: userToDelete } = await supabase.from('profiles').select('role').eq('id', req.params.id).single();
 
     if (userToDelete) {
       if (userToDelete.role === 'Admin') {
-        res.status(403).json({ message: 'Cannot delete another Admin account' });
+        res.status(403).json({ message: 'Cannot delete another Admin account' }); return;
         return;
       }
-      await userToDelete.deleteOne();
+      // Delete from Auth
+      await supabase.auth.admin.deleteUser(req.params.id as string);
+      // Delete from profiles (should cascade, but doing it explicitly)
+      await supabase.from('profiles').delete().eq('id', req.params.id);
+      
       res.json({ message: 'User permanently deleted' });
     } else {
-      res.status(404).json({ message: 'User not found' });
+      res.status(404).json({ message: 'User not found' }); return;
     }
   } catch (error: any) {
-    res.status(500).json({ message: error.message || 'Server error' });
+    res.status(500).json({ message: error.message || 'Server error' }); return;
   }
 };
 
@@ -147,20 +164,26 @@ export const deleteUser = async (req: AuthRequest, res: Response): Promise<void>
 export const getExaminerInsights = async (req: any, res: Response): Promise<void> => {
   try {
     const examinerId = req.params.id;
-    const Exam = require('../models/Exam').default;
-    const ExamAttempt = require('../models/ExamAttempt').default;
 
-    const exams = await Exam.find({ creatorId: examinerId }).populate('questions.questionId');
-    const examIds = exams.map((e: any) => e._id);
+    const { data: exams } = await supabase.from('exams').select('*, questions(*)').eq('creator_id', examinerId);
     
-    const attempts = await ExamAttempt.find({ 
-      examId: { $in: examIds }, 
-      status: { $in: ['Submitted', 'Auto-Submitted', 'Blocked'] }
-    }).populate('candidateId', 'name email section');
+    const examIds = exams ? exams.map(e => e.id) : [];
+    
+    let attempts = [];
+    if (examIds.length > 0) {
+        const { data } = await supabase.from('exam_attempts')
+            .select('*, candidate:candidate_id(name, email, section)')
+            .in('exam_id', examIds)
+            .in('status', ['Submitted', 'Auto-Submitted', 'Blocked']);
+        attempts = data || [];
+    }
 
-    res.json({ exams, attempts });
+    const formattedExams = exams?.map(e => ({ ...e, _id: e.id })) || [];
+    const formattedAttempts = attempts?.map(a => ({ ...a, _id: a.id, candidateId: a.candidate })) || [];
+
+    res.json({ exams: formattedExams, attempts: formattedAttempts });
   } catch (error: any) {
-    res.status(500).json({ message: error.message || 'Server error' });
+    res.status(500).json({ message: error.message || 'Server error' }); return;
   }
 };
 
@@ -171,7 +194,7 @@ export const bulkImportUsers = async (req: any, res: Response): Promise<void> =>
   try {
     const file = req.file;
     if (!file) {
-      res.status(400).json({ message: 'No CSV file uploaded' });
+      res.status(400).json({ message: 'No CSV file uploaded' }); return;
       return;
     }
 
@@ -179,19 +202,17 @@ export const bulkImportUsers = async (req: any, res: Response): Promise<void> =>
     const lines = csvData.split(/\r?\n/).filter((line: string) => line.trim() !== '');
 
     if (lines.length < 2) {
-      res.status(400).json({ message: 'CSV file is empty or missing data rows' });
+      res.status(400).json({ message: 'CSV file is empty or missing data rows' }); return;
       return;
     }
 
-    // Assume header: name, email, password, role, bsgId, section, state
     const headers = lines[0].split(',').map((h: string) => h.trim().toLowerCase());
-    
     let createdCount = 0;
     const errors = [];
 
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i].split(',').map((v: string) => v.trim());
-      if (line.length < 5) continue; // Minimum required fields
+      if (line.length < 5) continue; 
 
       const userData: any = {};
       headers.forEach((header: string, index: number) => {
@@ -199,27 +220,36 @@ export const bulkImportUsers = async (req: any, res: Response): Promise<void> =>
       });
 
       try {
-        const existingUser = await User.findOne({ 
-          $or: [{ email: userData.email }, { bsgId: userData.bsgid }] 
-        });
+        const { data: existingUser } = await supabase.from('profiles').select('id').or(`email.eq.${userData.email},bsgid.eq.${userData.bsgid}`).maybeSingle();
 
         if (existingUser) {
           errors.push(`Row ${i + 1}: User with email ${userData.email} or BSG ID ${userData.bsgid} already exists`);
           continue;
         }
 
-        const newUser = new User({
+        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+          email: userData.email,
+          password: userData.password,
+          email_confirm: true,
+          user_metadata: { full_name: userData.name, role: userData.role || 'Candidate' }
+        });
+
+        if (authError) {
+          errors.push(`Row ${i + 1}: ${authError.message}`);
+          continue;
+        }
+
+        await supabase.from('profiles').upsert({
+          id: authData.user.id,
           name: userData.name,
           email: userData.email,
-          passwordHash: userData.password,
           role: userData.role || 'Candidate',
-          bsgId: userData.bsgid,
+          bsgid: userData.bsgid,
           section: userData.section,
           state: userData.state,
           status: 'Active'
         });
 
-        await newUser.save();
         createdCount++;
       } catch (err: any) {
         errors.push(`Row ${i + 1}: Failed to create user - ${err.message}`);
@@ -232,7 +262,7 @@ export const bulkImportUsers = async (req: any, res: Response): Promise<void> =>
       errors
     });
   } catch (error: any) {
-    res.status(500).json({ message: error.message || 'Server error' });
+    res.status(500).json({ message: error.message || 'Server error' }); return;
   }
 };
 
@@ -241,24 +271,20 @@ export const bulkImportUsers = async (req: any, res: Response): Promise<void> =>
 // @access  Private/Admin
 export const updateUserByAdmin = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const userToUpdate = await User.findById(req.params.id);
-    if (!userToUpdate) {
-      res.status(404).json({ message: 'User not found' });
-      return;
-    }
+    const updates: any = {};
+    if (req.body.name) updates.name = req.body.name;
+    if (req.body.email) updates.email = req.body.email;
+    if (req.body.bsgId !== undefined) updates.bsgid = req.body.bsgId;
+    if (req.body.section !== undefined) updates.section = req.body.section;
+    if (req.body.rank !== undefined) updates.rank = req.body.rank;
+    if (req.body.district !== undefined) updates.district = req.body.district;
 
-    const { name, email, bsgId, section, rank, district } = req.body;
-    
-    if (name) userToUpdate.name = name;
-    if (email) userToUpdate.email = email;
-    if (bsgId !== undefined) userToUpdate.bsgId = bsgId;
-    if (section !== undefined) userToUpdate.section = section;
-    if (rank !== undefined) userToUpdate.rank = rank;
-    if (district !== undefined) userToUpdate.district = district;
+    const { data: updatedUser, error } = await supabase.from('profiles').update(updates).eq('id', req.params.id).select().single();
 
-    const updatedUser = await userToUpdate.save();
-    res.json({ message: 'User updated successfully', user: updatedUser });
+    if (error) throw error;
+
+    res.json({ message: 'User updated successfully', user: { ...updatedUser, _id: updatedUser.id } });
   } catch (error: any) {
-    res.status(500).json({ message: error.message || 'Server error' });
+    res.status(500).json({ message: error.message || 'Server error' }); return;
   }
 };

@@ -1,89 +1,91 @@
 import { Request, Response } from 'express';
-import User from '../models/User';
+import { supabase } from '../config/supabase';
 import generateToken from '../utils/generateToken';
-import Setting from '../models/Setting';
 import jwt from 'jsonwebtoken';
-import AuditLog from '../models/AuditLog';
+
 // @desc    Auth user & get token
 // @route   POST /api/auth/login
 // @access  Public
 export const loginUser = async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = req.body;
+    
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-    const user = await User.findOne({ $or: [{ email: email }, { bsgId: email }] });
-    const settings = await Setting.findOne();
-    const isMaintenance = settings?.maintenanceMode ?? false;
-    const maxFailedAttempts = settings?.maxFailedLoginAttempts ?? 5;
-
-    if (!user) {
-      res.status(401).json({ message: 'Invalid credentials' });
+    if (signInError || !signInData.user) {
+      res.status(401).json({ message: 'Invalid credentials' }); return;
       return;
     }
 
-    if (user.status === 'Blocked') {
-      res.status(403).json({ message: 'User is blocked' });
+    const { data: userProfile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', signInData.user.id)
+      .single();
+
+    if (profileError || !userProfile) {
+      res.status(401).json({ message: 'User profile not found' }); return;
       return;
     }
 
-    if (user.lockedUntil && user.lockedUntil > new Date()) {
-      res.status(403).json({ message: `Account is temporarily locked due to too many failed attempts. Try again later.` });
+    if (userProfile.status === 'Blocked') {
+      res.status(403).json({ message: 'User is blocked' }); return;
       return;
     }
 
-    if (await user.matchPassword(password)) {
-      // Reset failed attempts on success
-      user.failedLoginAttempts = 0;
-      user.lockedUntil = undefined;
-      user.lastLogin = new Date();
-      await user.save();
-
-      if (isMaintenance && user.role !== 'Admin') {
+    if (userProfile.locked_until && new Date(userProfile.locked_until) > new Date()) {
+      res.status(403).json({ message: `Account is temporarily locked. Try again later.` }); return;
+      return;
+    }
+    
+    // Reset failed attempts
+    await supabase.from('profiles').update({ failed_login_attempts: 0, locked_until: null, last_login: new Date().toISOString() }).eq('id', userProfile.id);
+    
+    const { data: settings } = await supabase.from('settings').select('*').single();
+    if (settings?.maintenance_mode && userProfile.role !== 'Admin') {
         res.status(503).json({ 
           message: 'The platform is currently under maintenance. Please try again later.',
-          platformName: settings?.platformName || 'BSG CBT Portal',
-          supportEmail: settings?.supportEmail || 'support@bsg-india.org'
         });
         return;
-      }
-
-      const token = generateToken(res, user._id.toString());
-
-      try {
-        await AuditLog.create({
-          userId: user._id,
-          action: 'LOGIN',
-          details: `User logged in from IP: ${req.ip || 'Unknown'}`,
-        });
-      } catch (err) {
-        console.error('AuditLog for login failed:', err);
-      }
-
-      res.json({
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        bsgId: user.bsgId,
-        district: user.district,
-        unitNumber: user.unitNumber,
-        unitName: user.unitName,
-        profileImage: user.profileImage,
-        token,
-      });
-    } else {
-      // Increment failed attempts
-      user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
-      if (user.failedLoginAttempts >= maxFailedAttempts) {
-        // Lock for 15 minutes
-        user.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
-      }
-      await user.save();
-
-      res.status(401).json({ message: 'Invalid credentials' });
     }
+
+    // Return the Supabase JWT so the frontend can use it, OR generate a local one.
+    // Since we support Supabase JWTs in authMiddleware, returning Supabase token is best.
+    const token = signInData.session.access_token;
+    
+    // Also set standard cookie just in case
+    res.cookie('jwt', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV !== 'development',
+      sameSite: 'strict',
+      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days
+    });
+
+    try {
+      await supabase.from('audit_logs').insert({
+        user_id: userProfile.id,
+        action: 'LOGIN',
+        details: `User logged in from IP: ${req.ip || 'Unknown'}`,
+      });
+    } catch (err) {}
+
+    res.json({
+      _id: userProfile.id,
+      name: userProfile.name,
+      email: userProfile.email,
+      role: userProfile.role,
+      bsgId: userProfile.bsgid,
+      district: userProfile.district,
+      unitNumber: userProfile.unit_number,
+      unitName: userProfile.unit_name,
+      profileImage: userProfile.profile_image,
+      token,
+    });
   } catch (error: any) {
-    res.status(500).json({ message: error.message || 'Server error' });
+    res.status(500).json({ message: error.message || 'Server error' }); return;
   }
 };
 
@@ -94,21 +96,14 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
   try {
     const { name, email, password, bsgId, section, adminCode, examinerCode, district, unitNumber, unitName } = req.body;
 
-    const userExists = await User.findOne({ email });
-
-    if (userExists) {
-      res.status(400).json({ message: 'User already exists' });
-      return;
-    }
-
     const nameRegex = /^[a-zA-Z\s]+$/;
     if (!nameRegex.test(name)) {
-      res.status(400).json({ message: 'Name can only contain letters and spaces (no special characters or numbers).' });
+      res.status(400).json({ message: 'Name can only contain letters and spaces.' }); return;
       return;
     }
 
     if (password.length < 6) {
-      res.status(400).json({ message: 'Password must be at least 6 characters.' });
+      res.status(400).json({ message: 'Password must be at least 6 characters.' }); return;
       return;
     }
 
@@ -118,50 +113,57 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
     } else if (examinerCode && process.env.EXAMINER_SECRET_CODE && examinerCode === process.env.EXAMINER_SECRET_CODE) {
       assignedRole = 'Examiner';
     } else if (examinerCode) {
-      res.status(400).json({ message: 'Invalid Examiner Secret Code' });
+      res.status(400).json({ message: 'Invalid Examiner Secret Code' }); return;
       return;
     }
 
-    const settings = await Setting.findOne();
-    const isMaintenance = settings?.maintenanceMode ?? false;
-    
-    if (isMaintenance && assignedRole !== 'Admin') {
-      res.status(503).json({ message: 'Registration is disabled while the platform is under maintenance.' });
-      return;
-    }
-
-    const user = await User.create({
-      name,
+    const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
-      passwordHash: password, // The pre-save hook will hash it
-      role: assignedRole,
-      bsgId: bsgId || undefined,
-      section: section || undefined,
-      district: district || undefined,
-      unitNumber: unitNumber || undefined,
-      unitName: unitName || undefined,
+      password,
+      options: {
+        data: { full_name: name, role: assignedRole }
+      }
     });
 
-    if (user) {
-      const token = generateToken(res, user._id.toString());
-
-      res.status(201).json({
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        bsgId: user.bsgId,
-        district: user.district,
-        unitNumber: user.unitNumber,
-        unitName: user.unitName,
-        profileImage: user.profileImage,
-        token,
-      });
-    } else {
-      res.status(400).json({ message: 'Invalid user data' });
+    if (authError || !authData.user) {
+      res.status(400).json({ message: authError?.message || 'Registration failed' }); return;
+      return;
     }
+
+    const { data: profileData, error: profileError } = await supabase.from('profiles').insert({
+      id: authData.user.id,
+      name,
+      email,
+      role: assignedRole,
+      bsgid: bsgId,
+      section,
+      district,
+      unit_number: unitNumber,
+      unit_name: unitName,
+      status: 'Active'
+    }).select().single();
+
+    if (profileError) {
+      res.status(400).json({ message: profileError.message }); return;
+      return;
+    }
+
+    const token = authData.session?.access_token || '';
+
+    res.status(201).json({
+      _id: profileData.id,
+      name: profileData.name,
+      email: profileData.email,
+      role: profileData.role,
+      bsgId: profileData.bsgid,
+      district: profileData.district,
+      unitNumber: profileData.unit_number,
+      unitName: profileData.unit_name,
+      profileImage: profileData.profile_image,
+      token,
+    });
   } catch (error: any) {
-    res.status(500).json({ message: error.message || 'Server error' });
+    res.status(500).json({ message: error.message || 'Server error' }); return;
   }
 };
 
@@ -172,50 +174,47 @@ export const logoutUser = async (req: Request, res: Response): Promise<void> => 
   const token = req.cookies.jwt;
   if (token) {
     try {
-      const decoded: any = jwt.verify(token, process.env.JWT_SECRET as string);
-      await User.findByIdAndUpdate(decoded.id, { lastLogout: new Date() });
-      
-      try {
-        await AuditLog.create({
-          userId: decoded.id,
-          action: 'LOGOUT',
-          details: `User logged out from IP: ${req.ip || 'Unknown'}`,
-        });
-      } catch (err) {
-        console.error('AuditLog for logout failed:', err);
+      const { data: { user } } = await supabase.auth.getUser(token);
+      if (user) {
+        await supabase.from('profiles').update({ last_logout: new Date().toISOString() }).eq('id', user.id);
+        try {
+          await supabase.from('audit_logs').insert({
+            user_id: user.id,
+            action: 'LOGOUT',
+            details: `User logged out from IP: ${req.ip || 'Unknown'}`,
+          });
+        } catch (err) {}
       }
-    } catch (error) {
-      console.error('Error decoding token for logout tracking:', error);
-    }
+    } catch (error) {}
   }
 
   res.cookie('jwt', '', {
     httpOnly: true,
     expires: new Date(0),
   });
-  res.status(200).json({ message: 'Logged out successfully' });
+  res.status(200).json({ message: 'Logged out successfully' }); return;
 };
 
 // @desc    Get user profile
 // @route   GET /api/auth/me
 // @access  Private
 export const getUserProfile = async (req: any, res: Response): Promise<void> => {
-  const user = await User.findById(req.user._id);
+  const { data: user, error } = await supabase.from('profiles').select('*').eq('id', req.user._id).single();
 
   if (user) {
     res.json({
-      _id: user._id,
+      _id: user.id,
       name: user.name,
       email: user.email,
       role: user.role,
-      bsgId: user.bsgId,
+      bsgId: user.bsgid,
       district: user.district,
-      unitNumber: user.unitNumber,
-      unitName: user.unitName,
-      profileImage: user.profileImage,
+      unitNumber: user.unit_number,
+      unitName: user.unit_name,
+      profileImage: user.profile_image,
     });
   } else {
-    res.status(404).json({ message: 'User not found' });
+    res.status(404).json({ message: 'User not found' }); return;
   }
 };
 
@@ -226,42 +225,43 @@ export const createExaminer = async (req: Request, res: Response): Promise<void>
   try {
     const { name, email, password, bsgId, section, rank } = req.body;
 
-    const userExists = await User.findOne({ email });
-
-    if (userExists) {
-      res.status(400).json({ message: 'User already exists' });
-      return;
-    }
-
-    const passwordRegex = /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{6,}$/;
-    if (!passwordRegex.test(password)) {
-      res.status(400).json({ message: 'Password must be at least 6 characters and contain a letter, a number, and a special character.' });
-      return;
-    }
-
-    const user = await User.create({
-      name,
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
       email,
-      passwordHash: password,
-      role: 'Examiner',
-      bsgId,
-      section,
-      rank
+      password,
+      email_confirm: true,
+      user_metadata: { full_name: name, role: 'Examiner' }
     });
 
-    if (user) {
-      res.status(201).json({
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        message: 'Examiner created successfully',
-      });
-    } else {
-      res.status(400).json({ message: 'Invalid user data' });
+    if (authError || !authData.user) {
+      res.status(400).json({ message: authError?.message || 'Failed to create examiner' }); return;
+      return;
     }
+
+    const { data: user, error: profileError } = await supabase.from('profiles').insert({
+      id: authData.user.id,
+      name,
+      email,
+      role: 'Examiner',
+      bsgid: bsgId,
+      section,
+      rank,
+      status: 'Active'
+    }).select().single();
+
+    if (profileError) {
+      res.status(400).json({ message: profileError.message }); return;
+      return;
+    }
+
+    res.status(201).json({
+      _id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      message: 'Examiner created successfully',
+    });
   } catch (error: any) {
-    res.status(500).json({ message: error.message || 'Server error' });
+    res.status(500).json({ message: error.message || 'Server error' }); return;
   }
 };
 
@@ -269,45 +269,43 @@ export const createExaminer = async (req: Request, res: Response): Promise<void>
 // @route   PUT /api/auth/me/profile
 // @access  Private
 export const updateUserProfile = async (req: any, res: Response): Promise<void> => {
-  const user = await User.findById(req.user._id);
-
-  if (user) {
-    if (req.body.name) {
-      const nameRegex = /^[a-zA-Z\s]+$/;
-      if (!nameRegex.test(req.body.name)) {
-        res.status(400).json({ message: 'Name can only contain letters and spaces (no special characters or numbers).' });
-        return;
-      }
-    }
-    
-    user.name = req.body.name || user.name;
-    user.profileImage = req.body.profileImage !== undefined ? req.body.profileImage : user.profileImage;
+  try {
+    let updates: any = {};
+    if (req.body.name) updates.name = req.body.name;
+    if (req.body.profileImage !== undefined) updates.profile_image = req.body.profileImage;
     
     if (req.body.password) {
       const passwordRegex = /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{6,}$/;
       if (!passwordRegex.test(req.body.password)) {
-        res.status(400).json({ message: 'Password must be at least 6 characters and contain a letter, a number, and a special character.' });
+        res.status(400).json({ message: 'Password must be at least 6 characters and contain a letter, a number, and a special character.' }); return;
         return;
       }
-      user.passwordHash = req.body.password; // hook will hash it
+      const { error: authError } = await supabase.auth.admin.updateUserById(req.user._id, { password: req.body.password });
+      if (authError) {
+         res.status(400).json({ message: authError.message }); return;
+         return;
+      }
     }
 
-    const updatedUser = await user.save();
+    const { data: updatedUser, error } = await supabase.from('profiles').update(updates).eq('id', req.user._id).select().single();
+
+    if (error || !updatedUser) {
+      res.status(404).json({ message: 'User not found' }); return;
+      return;
+    }
 
     res.json({
-      _id: updatedUser._id,
+      _id: updatedUser.id,
       name: updatedUser.name,
       email: updatedUser.email,
       role: updatedUser.role,
-      bsgId: updatedUser.bsgId,
+      bsgId: updatedUser.bsgid,
       district: updatedUser.district,
-      unitNumber: updatedUser.unitNumber,
-      unitName: updatedUser.unitName,
-      profileImage: updatedUser.profileImage,
+      unitNumber: updatedUser.unit_number,
+      unitName: updatedUser.unit_name,
+      profileImage: updatedUser.profile_image,
     });
-  } else {
-    res.status(404).json({ message: 'User not found' });
+  } catch (error: any) {
+      res.status(500).json({ message: error.message || 'Server error' }); return;
   }
 };
-
-

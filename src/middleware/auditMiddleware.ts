@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import AuditLog from '../models/AuditLog';
+import { supabase } from '../config/supabase';
 import { AuthRequest } from './authMiddleware';
 
 export const auditLog = (actionName: string) => {
@@ -8,12 +8,11 @@ export const auditLog = (actionName: string) => {
     res.on('finish', async () => {
       if (req.user) {
         try {
-          const log = new AuditLog({
-            userId: req.user._id,
+          await supabase.from('audit_logs').insert({
+            user_id: req.user._id || req.user.id,
             action: actionName,
             details: `Method: ${req.method} | URL: ${req.originalUrl} | Status: ${res.statusCode}`,
           });
-          await log.save();
         } catch (error) {
           console.error('Audit log failed', error);
         }

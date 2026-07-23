@@ -4,7 +4,6 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import connectDB from './config/db';
 import authRoutes from './routes/authRoutes';
 import userRoutes from './routes/userRoutes';
 import examRoutes from './routes/examRoutes';
@@ -12,13 +11,13 @@ import { attemptRoutes } from './routes/attemptRoutes';
 import settingRoutes from './routes/settingRoutes';
 import { startScheduler } from './utils/scheduler';
 import path from 'path';
+import { supabase } from './config/supabase';
 
 dotenv.config();
 
 const port = process.env.PORT || 5000;
 
-// Connect to MongoDB and start background scheduler
-connectDB();
+// Start background scheduler
 startScheduler();
 
 const app = express();
